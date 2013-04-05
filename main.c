@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 #define LINE_MAX 100
-#define NB_EXEC 1000
+
+unsigned long loop_exec=1000;
 
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
 
@@ -12,7 +14,7 @@ void display_stat()
 //	fprintf(stdout,"nb_trans = %u\n",nb_tran);
 //	fprintf(stdout,"nb_flush = %u\n",nb_flush);
 	fprintf(stdout,"exec since last flush = %u\n",nb_exec-last_tb_exec);
-	fprintf(stdout,"exec ratio = %f\n",(float)(nb_exec-last_tb_exec)/NB_EXEC);
+	fprintf(stdout,"exec ratio = %f\n",(float)(nb_exec-last_tb_exec)/loop_exec);
 	}
 
 void display_menu()
@@ -20,20 +22,21 @@ void display_menu()
   	fprintf(stdout,"Choose the command to execute:\n");
 	fprintf(stdout,"1 - Read file\n");
 	fprintf(stdout,"2 - Display Stat\n");
-	fprintf(stdout,"3 - Exit\n");
+	fprintf(stdout,"3 - Modify number of instructions into loop\n");
+	fprintf(stdout,"0 - Exit\n");
 	}
 
-void read_log(FILE *f,int length)
+void read_log(FILE *f)
 {
 	int next_line_is_adress=0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
 	int nb_lines=0;
 	last_tb_exec=nb_exec;
-	   while((fgets(line,LINE_MAX,f)!= NULL) || (nb_lines < length))
+	   while((fgets(line,LINE_MAX,f)!= NULL) || (nb_lines < loop_exec))
    {
    	if (next_line_is_adress) 
-   	{												// should convert adress to int
+   	{													// should convert adress to int
    		next_line_is_adress=0;
    		strncpy(tmp,line,18);
    		tmp[19]='\0';	   		
@@ -48,7 +51,7 @@ void read_log(FILE *f,int length)
       	break;
       case 'T': fprintf(stdout,line+21); 		// Trace case..
 			nb_exec++;	break;     
-		case 'F': fprintf(stdout,line); 		// tb_flush >> must return 
+		case 'F': fprintf(stdout,line); 			// tb_flush >> must return 
 			nb_flush++;	return;
       }}
 
@@ -60,8 +63,6 @@ int main(int argc, char **argv)
 {
 	FILE *f;
 	char read_char;
-
-
 
 	if (argc<2) 
 	{
@@ -86,9 +87,12 @@ int main(int argc, char **argv)
 while(1) {
    read_char=getchar();
    switch(read_char) {
-   	case '1': read_log(f,NB_EXEC); break;
-   	case '2': display_stat();
-   	default:break;
+   	case '1': read_log(f); break;
+   	case '2': display_stat();break;
+   	case '3': fprintf(stdout,"Actual loop_exec=%d, Enter new value: ");scanf("%u",loop_exec);break;
+   	
+   	case '0': exit(EXIT_SUCCESS);
+   	default:  display_menu(); break;
    	}
 }
    
