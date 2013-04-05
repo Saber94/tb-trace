@@ -7,15 +7,19 @@
 
 int loop_exec=1000;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
+float ratio;
+
 
 void display_stat()
 {
+	extern float ratio;
    fprintf(stdout,"\nStat:\n");
 	fprintf(stdout,"nb_exec  = %u\n",nb_exec);
-//	fprintf(stdout,"nb_trans = %u\n",nb_tran);
-//	fprintf(stdout,"nb_flush = %u\n",nb_flush);
+	fprintf(stdout,"nb_trans = %u\n",nb_tran);
+	fprintf(stdout,"nb_flush = %u\n",nb_flush);
 	fprintf(stdout,"exec since last flush = %u\n",nb_exec-last_tb_exec);
-	fprintf(stdout,"exec ratio = %f\n",(float)(nb_exec-last_tb_exec)/code_gen_max_blocks);
+	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+	fprintf(stdout,"exec ratio = %f\n",ratio);
 	}
 
 void display_menu()
@@ -29,6 +33,7 @@ void display_menu()
 
 void read_log(FILE *f)
 {
+	FILE *fdat;
 	int next_line_is_adress=0;
 	static int tb_flushed =0;
    char line[LINE_MAX];
@@ -38,7 +43,14 @@ void read_log(FILE *f)
 		{
 			last_tb_exec=nb_exec;
 			tb_flushed=0;
-			}
+			fdat = fopen("results.dat", "a");
+      	if (fdat == NULL) {
+         	printf("I couldn't open results.dat for writing.\n");
+         	exit(0);
+      		}
+			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+    		fclose(fdat);
+		}
 
 	while((fgets(line,LINE_MAX,f)!= NULL) && (nb_lines < loop_exec))
    {
@@ -59,7 +71,7 @@ void read_log(FILE *f)
       case 'T': fprintf(stdout,line+21); 		// Trace case..
 			nb_exec++;	break;     
 		case 'F': fprintf(stdout,line); 			// tb_flush >> must return 
-			nb_flush++;	tb_flushed=1; return;
+			nb_flush++;	tb_flushed=1; void display_stat(); return;
       }}
 
 	nb_lines++;   
@@ -75,13 +87,9 @@ int main(int argc, char **argv)
 	if (argc<2) 
 	{
 		fprintf(stdout,"Should pass trace file as argument!\n");
-		return -1;
+		return -1; 
 	}
-	
 
-	/* Clear screen at startup */
-	if (system( "clear" )) system( "cls" );
-	fprintf(stdout,"\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");
 		
    f=fopen(&argv[1][0],"r");
    if(f == NULL)
@@ -90,6 +98,13 @@ int main(int argc, char **argv)
         return -1;
     }
     
+   if (remove("results.dat") == -1)
+   perror("Error in deleting a file"); 
+
+	/* Clear screen at startup */
+	if (system( "clear" )) system( "cls" );
+	fprintf(stdout,"\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
+   
    display_menu();
 
 while(1) {
