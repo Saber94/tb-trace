@@ -5,14 +5,14 @@
 #define LINE_MAX 100
 #define code_gen_max_blocks 2000
 
-int loop_exec=1000;
+int loop_exec;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
+unsigned int Read_Adress,Read_Size,Trans_Adress;
 float ratio;
+unsigned int trace[1000][3];
 
-int trace[1000][3];
 
-
-void display_stat()
+void Display_Stat()
 {
 	int i;
 	extern float ratio;
@@ -23,17 +23,43 @@ void display_stat()
 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
 	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
 	printf("exec ratio = %f\n",ratio);	
-	printf("   Adress | Size | Nb Exec\n");
-	for(i=0;i<1000;i++) printf(" %8x | %4u | %u \n",trace[i][0],trace[i][1],trace[i][2]);
 	}
 	
-void Inc_tb_exec(int Adress)
+void Display_Trace(int size)
+{
+	FILE *f_trace;
+	int i,Sum=0;
+	f_trace = fopen("trace.dat", "w");
+      	if (f_trace == NULL) {
+         	printf("I couldn't open results.dat for writing.\n");
+         	exit(EXIT_FAILURE);
+      		}
+	fprintf(f_trace,"  i |   Adress | Size | Nb Exec\n"); 
+   for(i=0;i < (size<1000?size:1000);i++) 
+   	{
+   		fprintf(f_trace,"%3u | %8x | %4u | %u \n",i,trace[i][0],trace[i][1],trace[i][2]);
+   		Sum+=trace[i][2];
+   	}
+   fprintf(f_trace,"Total Exec = %u \n", Sum);
+   fclose(f_trace);
+}
+	
+void Inc_tb_exec(unsigned int Adress)
 {
 	int i=0;
-	while(trace[i++][0]!=Adress && i<1000); 
-	if (i>999) printf("block @ %x not found ! \n",Adress);
-	else 	trace[i-1][2]++;
-}		
+	while((trace[i][0]!=Adress) && (i<1000)) i++; 
+	if (i>999)  
+	{
+	 	printf("Warning: block @ %x not found ! \n",Adress);
+	 	Display_Trace(nb_tran);
+	 	printf("Abnormal program termination!\n");
+	 	exit(EXIT_FAILURE);
+ 	}
+	else
+	{
+	trace[i][2]++;
+	}
+}
 
 void display_menu()
 {
@@ -41,16 +67,17 @@ void display_menu()
 	printf("1 - Read file\n");
 	printf("2 - Display Stat\n");
 	printf("3 - Modify number of instructions into loop\n");
+	printf("4 - Print tb trace table\n");
 	printf("0 - Exit\n");
 	}
 
-void read_log(FILE *f)
+void Read_Log(FILE *f)
 {
 	FILE *fdat;
 	int i;
 	int next_line_is_adress=0;
 	int nb_lines=0;
-	int Read_Adress,Read_Size;
+
 	static int tb_flushed =0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
@@ -62,7 +89,7 @@ void read_log(FILE *f)
 			fdat = fopen("results.dat", "a");
       	if (fdat == NULL) {
          	printf("I couldn't open results.dat for writing.\n");
-         	exit(0);
+         	exit(EXIT_FAILURE);
       		}
 			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     		fclose(fdat);
@@ -87,10 +114,10 @@ void read_log(FILE *f)
       			 trace[i][1] = Read_Size;
       			 trace[i][2] = 0;
       	break;
-      case 'T': sscanf(line+22,"%x",&Read_Adress);	printf("Execution   @ 0x%x\n",Read_Adress); Inc_tb_exec(Read_Adress);
+      case 'T': sscanf(line+22,"%x",&Trans_Adress);	printf("Execution   @ 0x%x\n",Trans_Adress); Inc_tb_exec(Trans_Adress);
 			nb_exec++;	break;     
 		case 'F': printf(line); 			// tb_flush >> must return 
-			nb_flush++;	tb_flushed=1; display_stat(); return;
+			nb_flush++;	tb_flushed=1; Display_Stat(); return;
       }}
 
 	nb_lines++;   
@@ -129,10 +156,10 @@ int main(int argc, char **argv)
 while(1) {
    read_char=getchar();
    switch(read_char) {
-   	case '1': read_log(f); break;
-   	case '2': display_stat();break;
+   	case '1': Read_Log(f); break;
+   	case '2': Display_Stat();break;
    	case '3': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	
+   	case '4': Display_Trace(nb_tran);break;
    	case '0': exit(EXIT_SUCCESS);
    	default:  break;
    	}
