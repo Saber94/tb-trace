@@ -5,12 +5,20 @@
 #define LINE_MAX 100
 #define code_gen_max_blocks 2000
 
-int loop_exec;
+int loop_exec,trace_size = 0;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
-unsigned int Read_Adress,Read_Size,Trans_Adress;
+unsigned long Read_Adress,Read_Size;
 float ratio;
-unsigned int trace[1000][3];
+unsigned long trace[1000][4];
 
+
+void Trace_Init()
+{
+	int i,j;
+	for(i=0;i<1000;i++)
+		for(j=0;j<4;j++) 
+			trace[i][j]=0;
+}
 
 void Display_Stat()
 {
@@ -23,42 +31,34 @@ void Display_Stat()
 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
 	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
 	printf("exec ratio = %f\n",ratio);	
-	}
+}
 	
-void Display_Trace(int size)
+void Log_Trace(int size)
 {
 	FILE *f_trace;
-	int i,Sum=0;
+	int i,Sum_Exec=0,Sum_Trans=0;
 	f_trace = fopen("trace.dat", "w");
       	if (f_trace == NULL) {
          	printf("I couldn't open results.dat for writing.\n");
          	exit(EXIT_FAILURE);
       		}
-	fprintf(f_trace,"  i |   Adress | Size | Nb Exec\n"); 
+	fprintf(f_trace,"  i |   Adress | Size | Nb Exec | Nb Tran \n"); 
    for(i=0;i < (size<1000?size:1000);i++) 
    	{
-   		fprintf(f_trace,"%3u | %8x | %4u | %u \n",i,trace[i][0],trace[i][1],trace[i][2]);
-   		Sum+=trace[i][2];
+   		fprintf(f_trace,"%3u | %8x | %4u |  %5u  | %5u \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3]);
+   		Sum_Exec+=trace[i][2];
+   		Sum_Trans+=trace[i][3];
    	}
-   fprintf(f_trace,"Total Exec = %u \n", Sum);
+   fprintf(f_trace,"Total Exec = %u \nTotal Tran = %u\n", Sum_Exec,Sum_Trans);
    fclose(f_trace);
 }
 	
-void Inc_tb_exec(unsigned int Adress)
+int Lookup_tb(unsigned long Adress)
 {
 	int i=0;
-	while((trace[i][0]!=Adress) && (i<1000)) i++; 
-	if (i>999)  
-	{
-	 	printf("Warning: block @ %x not found ! \n",Adress);
-	 	Display_Trace(nb_tran);
-	 	printf("Abnormal program termination!\n");
-	 	exit(EXIT_FAILURE);
- 	}
-	else
-	{
-	trace[i][2]++;
-	}
+	while((i<=trace_size) && (trace[i][0]!=Adress)) i++;
+	if (Adress!=trace[i][0]) trace_size++;
+	return i-1;
 }
 
 void display_menu()
@@ -71,7 +71,7 @@ void display_menu()
 	printf("0 - Exit\n");
 	}
 
-void Read_Log(FILE *f)
+void Read_Qemu_Log(FILE *f)
 {
 	FILE *fdat;
 	int i;
@@ -95,7 +95,7 @@ void Read_Log(FILE *f)
     		fclose(fdat);
 		}
 
-	while((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
+	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
    {
    	if (next_line_is_adress) 
    	{
@@ -104,21 +104,39 @@ void Read_Log(FILE *f)
    		printf("Translation @ 0x%x ",Read_Adress);
    		}
    	else 
-   	{	switch(line[0]) {
-      case 'I': next_line_is_adress=1;
-			nb_tran++;	break;
+   	{	
+   		switch(line[0]) {
+      case 'I': next_line_is_adress = 1;
+					 nb_tran++;
+					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);	
       			 printf("[size = %3u]\n",Read_Size);
-					 i = nb_tran % 1000;
+					 i = Lookup_tb(Read_Adress);
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
-      			 trace[i][2] = 0;
-      	break;
-      case 'T': sscanf(line+22,"%x",&Trans_Adress);	printf("Execution   @ 0x%x\n",Trans_Adress); Inc_tb_exec(Trans_Adress);
-			nb_exec++;	break;     
+      			 trace[i][3]++;
+      			break;
+      case 'T': sscanf(line+22,"%x",&Read_Adress);
+      			 printf("Execution   @ 0x%x\n",Read_Adress); 
+      			 i = Lookup_tb(Read_Adress);
+      			 if (i>999) 										// Executed Block must be already translated !
+      			 	{
+						printf("Error: block @ %x not found ! \n",Read_Adress);
+						Log_Trace(nb_tran);
+						printf("Abnormal program termination!\n");
+						exit(EXIT_FAILURE);      			 		
+      			 	}
+      			 trace[i][2]++;
+					 nb_exec++;
+					break;     
 		case 'F': printf(line); 			// tb_flush >> must return 
-			nb_flush++;	tb_flushed=1; Display_Stat(); return;
-      }}
+					 nb_flush++;
+					 tb_flushed=1;
+					 Log_Trace(nb_tran);
+					 Display_Stat();
+					return;
+      	}
+     	}
 
 	nb_lines++;   
    }
@@ -146,6 +164,8 @@ int main(int argc, char **argv)
     
    if (remove("results.dat") == -1)
    perror("Error in deleting a file"); 
+   
+   Trace_Init();
 
 	/* Clear screen at startup */
 	if (system( "clear" )) system( "cls" );
@@ -156,10 +176,10 @@ int main(int argc, char **argv)
 while(1) {
    read_char=getchar();
    switch(read_char) {
-   	case '1': Read_Log(f); break;
+   	case '1': Read_Qemu_Log(f); break;
    	case '2': Display_Stat();break;
    	case '3': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '4': Display_Trace(nb_tran);break;
+   	case '4': Log_Trace(nb_tran);break;
    	case '0': exit(EXIT_SUCCESS);
    	default:  break;
    	}
@@ -169,4 +189,3 @@ while(1) {
 
 
 }
-   
