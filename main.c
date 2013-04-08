@@ -9,34 +9,48 @@ int loop_exec=1000;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
 float ratio;
 
+int trace[1000][3];
+
 
 void display_stat()
 {
+	int i;
 	extern float ratio;
-   fprintf(stdout,"\nStat:\n");
-	fprintf(stdout,"nb_exec  = %u\n",nb_exec);
-	fprintf(stdout,"nb_trans = %u\n",nb_tran);
-	fprintf(stdout,"nb_flush = %u\n",nb_flush);
-	fprintf(stdout,"exec since last flush = %u\n",nb_exec-last_tb_exec);
+   printf("\nStat:\n");
+	printf("nb_exec  = %u\n",nb_exec);
+	printf("nb_trans = %u\n",nb_tran);
+	printf("nb_flush = %u\n",nb_flush);
+	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
 	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
-	fprintf(stdout,"exec ratio = %f\n",ratio);
+	printf("exec ratio = %f\n",ratio);	
+	printf("   Adress | Size | Nb Exec\n");
+	for(i=0;i<1000;i++) printf(" %8x | %4u | %u \n",trace[i][0],trace[i][1],trace[i][2]);
 	}
+	
+void Inc_tb_exec(int Adress)
+{
+	int i=0;
+	while(trace[i++][0]!=Adress && i<1000); 
+	if (i>999) printf("block @ %x not found ! \n",Adress);
+	else 	trace[i-1][2]++;
+}		
 
 void display_menu()
 {
-  	fprintf(stdout,"\nChoose the command to execute:\n");
-	fprintf(stdout,"1 - Read file\n");
-	fprintf(stdout,"2 - Display Stat\n");
-	fprintf(stdout,"3 - Modify number of instructions into loop\n");
-	fprintf(stdout,"0 - Exit\n");
+  	printf("\nChoose the command to execute:\n");
+	printf("1 - Read file\n");
+	printf("2 - Display Stat\n");
+	printf("3 - Modify number of instructions into loop\n");
+	printf("0 - Exit\n");
 	}
 
 void read_log(FILE *f)
 {
 	FILE *fdat;
+	int i;
 	int next_line_is_adress=0;
 	int nb_lines=0;
-	int Read_Adress;
+	int Read_Adress,Read_Size;
 	static int tb_flushed =0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
@@ -54,24 +68,29 @@ void read_log(FILE *f)
     		fclose(fdat);
 		}
 
-	while((fgets(line,LINE_MAX,f)!= NULL) && (nb_lines < loop_exec))
+	while((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
    {
    	if (next_line_is_adress) 
-   	{													// should convert adress to int
+   	{
    		next_line_is_adress=0;
    		sscanf(line,"%x",&Read_Adress);
-   		fprintf(stdout,"new translation at %x ",Read_Adress);
+   		printf("Translation @ 0x%x ",Read_Adress);
    		}
    	else 
    	{	switch(line[0]) {
       case 'I': next_line_is_adress=1;
 			nb_tran++;	break;
-      case 'O': sscanf(line+11,"%u",&Read_Adress);	fprintf(stdout,"[size = %u]\n",Read_Adress);	// should convert size to int
+      case 'O': sscanf(line+11,"%u",&Read_Size);	
+      			 printf("[size = %3u]\n",Read_Size);
+					 i = nb_tran % 1000;
+      			 trace[i][0] = Read_Adress;
+      			 trace[i][1] = Read_Size;
+      			 trace[i][2] = 0;
       	break;
-      case 'T': sscanf(line+22,"%x",&Read_Adress);	fprintf(stdout,"Execution of block at %x\n",Read_Adress);//fprintf(stdout,line+21); 		// Trace case..
+      case 'T': sscanf(line+22,"%x",&Read_Adress);	printf("Execution   @ 0x%x\n",Read_Adress); Inc_tb_exec(Read_Adress);
 			nb_exec++;	break;     
-		case 'F': fprintf(stdout,line); 			// tb_flush >> must return 
-			nb_flush++;	tb_flushed=1; void display_stat(); return;
+		case 'F': printf(line); 			// tb_flush >> must return 
+			nb_flush++;	tb_flushed=1; display_stat(); return;
       }}
 
 	nb_lines++;   
@@ -86,7 +105,7 @@ int main(int argc, char **argv)
 
 	if (argc<2) 
 	{
-		fprintf(stdout,"Should pass trace file as argument!\n");
+		printf("Should pass trace file as argument!\n");
 		return -1; 
 	}
 
@@ -94,7 +113,7 @@ int main(int argc, char **argv)
    f=fopen(&argv[1][0],"r");
    if(f == NULL)
     {
-        fprintf(stdout,"src file not found! Exiting...\n");
+        printf("src file not found! Exiting...\n");
         return -1;
     }
     
@@ -103,7 +122,7 @@ int main(int argc, char **argv)
 
 	/* Clear screen at startup */
 	if (system( "clear" )) system( "cls" );
-	fprintf(stdout,"\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
+	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
    
    display_menu();
 
@@ -112,7 +131,7 @@ while(1) {
    switch(read_char) {
    	case '1': read_log(f); break;
    	case '2': display_stat();break;
-   	case '3': fprintf(stdout,"Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
+   	case '3': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
    	
    	case '0': exit(EXIT_SUCCESS);
    	default:  break;
