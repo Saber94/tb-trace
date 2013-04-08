@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 1000
+#define code_gen_max_blocks 2000
 
 int loop_exec=1000;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
@@ -35,10 +35,12 @@ void read_log(FILE *f)
 {
 	FILE *fdat;
 	int next_line_is_adress=0;
+	int nb_lines=0;
+	int Read_Adress;
 	static int tb_flushed =0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
-	int nb_lines=0;
+
 	if (tb_flushed) 
 		{
 			last_tb_exec=nb_exec;
@@ -57,18 +59,16 @@ void read_log(FILE *f)
    	if (next_line_is_adress) 
    	{													// should convert adress to int
    		next_line_is_adress=0;
-   		strncpy(tmp,line,18);
-   		tmp[19]='\0';	   		
-   		fprintf(stdout,"new translation at ");
-   		puts(tmp);
+   		sscanf(line,"%x",&Read_Adress);
+   		fprintf(stdout,"new translation at %x ",Read_Adress);
    		}
    	else 
    	{	switch(line[0]) {
       case 'I': next_line_is_adress=1;
 			nb_tran++;	break;
-      case 'O': fprintf(stdout,line+5);		// should convert size to int
+      case 'O': sscanf(line+11,"%u",&Read_Adress);	fprintf(stdout,"[size = %u]\n",Read_Adress);	// should convert size to int
       	break;
-      case 'T': fprintf(stdout,line+21); 		// Trace case..
+      case 'T': sscanf(line+22,"%x",&Read_Adress);	fprintf(stdout,"Execution of block at %x\n",Read_Adress);//fprintf(stdout,line+21); 		// Trace case..
 			nb_exec++;	break;     
 		case 'F': fprintf(stdout,line); 			// tb_flush >> must return 
 			nb_flush++;	tb_flushed=1; void display_stat(); return;
