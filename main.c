@@ -7,18 +7,9 @@
 
 int loop_exec,trace_size = 0;
 unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
-unsigned long Read_Adress,Read_Size;
+unsigned int Read_Adress,Read_Size;
 float ratio;
-unsigned long trace[1000][4];
-
-
-void Trace_Init()
-{
-	int i,j;
-	for(i=0;i<1000;i++)
-		for(j=0;j<4;j++) 
-			trace[i][j]=0;
-}
+unsigned int trace[1000][4];
 
 void Display_Stat()
 {
@@ -53,12 +44,12 @@ void Log_Trace(int size)
    fclose(f_trace);
 }
 	
-int Lookup_tb(unsigned long Adress)
+int Lookup_tb(unsigned int Adress)
 {
 	int i=0;
-	while((i<=trace_size) && (trace[i][0]!=Adress)) i++;
+	while((i<trace_size) && (trace[i][0]!=Adress)) i++;
 	if (Adress!=trace[i][0]) trace_size++;
-	return i-1;
+	return i;
 }
 
 void display_menu()
@@ -112,6 +103,13 @@ void Read_Qemu_Log(FILE *f)
       case 'O': sscanf(line+11,"%u",&Read_Size);	
       			 printf("[size = %3u]\n",Read_Size);
 					 i = Lookup_tb(Read_Adress);
+					 if (trace[i][1]>0)
+					   {
+						printf("Attemp to overwrite bloc @ 0x%x (index=%u) \n",Read_Adress,i);
+						Log_Trace(nb_tran);
+						printf("Abnormal program termination!\n");
+						exit(EXIT_FAILURE);      			 		
+      			 	}
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
       			 trace[i][3]++;
@@ -119,6 +117,7 @@ void Read_Qemu_Log(FILE *f)
       case 'T': sscanf(line+22,"%x",&Read_Adress);
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
+      			 printf("Read ad %x, index %u\n",Read_Adress,i);
       			 if (i>999) 										// Executed Block must be already translated !
       			 	{
 						printf("Error: block @ %x not found ! \n",Read_Adress);
@@ -164,8 +163,6 @@ int main(int argc, char **argv)
     
    if (remove("results.dat") == -1)
    perror("Error in deleting a file"); 
-   
-   Trace_Init();
 
 	/* Clear screen at startup */
 	if (system( "clear" )) system( "cls" );
