@@ -103,7 +103,7 @@ void Read_Qemu_Log(FILE *f)
       case 'O': sscanf(line+11,"%u",&Read_Size);	
       			 printf("[size = %3u]\n",Read_Size);
 					 i = Lookup_tb(Read_Adress);
-					 if (trace[i][1]>0)
+					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					   {
 						printf("Attemp to overwrite bloc @ 0x%x (index=%u) \n",Read_Adress,i);
 						Log_Trace(nb_tran);
@@ -117,14 +117,6 @@ void Read_Qemu_Log(FILE *f)
       case 'T': sscanf(line+22,"%x",&Read_Adress);
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
-      			 printf("Read ad %x, index %u\n",Read_Adress,i);
-      			 if (i>999) 										// Executed Block must be already translated !
-      			 	{
-						printf("Error: block @ %x not found ! \n",Read_Adress);
-						Log_Trace(nb_tran);
-						printf("Abnormal program termination!\n");
-						exit(EXIT_FAILURE);      			 		
-      			 	}
       			 trace[i][2]++;
 					 nb_exec++;
 					break;     
