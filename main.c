@@ -11,6 +11,15 @@ unsigned int Read_Adress,Read_Size;
 float ratio;
 unsigned int trace[1000][4];
 
+void Trace_Init()
+{
+  int i,j;
+  for(i=0;i<1000;i++)
+    for(j=0;j<4;j++) 
+      trace[i][j]=0;
+}
+ 
+
 void Display_Stat()
 {
 	int i;
@@ -24,7 +33,7 @@ void Display_Stat()
 	printf("exec ratio = %f\n",ratio);	
 }
 	
-void Log_Trace(int size)
+void Log_Trace()
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
@@ -34,7 +43,7 @@ void Log_Trace(int size)
          	exit(EXIT_FAILURE);
       		}
 	fprintf(f_trace,"  i |   Adress | Size | Nb Exec | Nb Tran \n"); 
-   for(i=0;i < (size<1000?size:1000);i++) 
+   for(i=0;i < trace_size;i++) 
    	{
    		fprintf(f_trace,"%3u | %8x | %4u |  %5u  | %5u \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3]);
    		Sum_Exec+=trace[i][2];
@@ -105,10 +114,10 @@ void Read_Qemu_Log(FILE *f)
 					 i = Lookup_tb(Read_Adress);
 					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					   {
-						printf("Attemp to overwrite bloc @ 0x%x (index=%u) \n",Read_Adress,i);
-						Log_Trace(nb_tran);
-						printf("Abnormal program termination!\n");
-						exit(EXIT_FAILURE);      			 		
+						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
+						Log_Trace();
+						printf("Press any key to continue...\n");
+						getchar();    			 		
       			 	}
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
@@ -123,8 +132,10 @@ void Read_Qemu_Log(FILE *f)
 		case 'F': printf(line); 			// tb_flush >> must return 
 					 nb_flush++;
 					 tb_flushed=1;
-					 Log_Trace(nb_tran);
+					 Log_Trace();
 					 Display_Stat();
+					 trace_size = 0;
+					 Trace_Init();
 					return;
       	}
      	}
@@ -153,6 +164,7 @@ int main(int argc, char **argv)
         return -1;
     }
     
+   Trace_Init(); 
    if (remove("results.dat") == -1)
    perror("Error in deleting a file"); 
 
