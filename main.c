@@ -9,7 +9,7 @@ int loop_exec,trace_size = 0;
 unsigned int nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
 unsigned int Read_Adress,Read_Size;
 float ratio;
-unsigned int trace[code_gen_max_blocks][4];
+unsigned int trace[code_gen_max_blocks][5];
 
 void Trace_Init()
 {
@@ -37,6 +37,8 @@ void Log_Trace(unsigned int nb)
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
+	int Deviation,Esperance;
+	long Variance;
 	char filename[16]; 
    snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb);
 	f_trace = fopen(filename, "w");
@@ -44,14 +46,22 @@ void Log_Trace(unsigned int nb)
          	printf("I couldn't open results.dat for writing.\n");
          	exit(EXIT_FAILURE);
       		}
-	fprintf(f_trace,"  i |   Adress | Size | Nb Exec | Nb Tran \n"); 
-   for(i=0;i < trace_size;i++) 
+	for(i=0;i < trace_size;i++) 
    	{
-   		fprintf(f_trace,"%03u | %08x | %04u |  %05u  | %05u \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3]);
    		Sum_Exec+=trace[i][2];
    		Sum_Trans+=trace[i][3];
+   	}   
+   Esperance = (trace_size>0?Sum_Exec/trace_size:0);
+   Variance = 0;
+	fprintf(f_trace,"  i |   Adress | Size | Nb Ex | Nb Tr | Deviation \n"); 
+   for(i=0;i < trace_size;i++) 
+   	{
+   		Deviation = trace[i][2] - Esperance;
+   		fprintf(f_trace,"%03u | %08x | %04u | %05u | %05u | %+05d \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation);
+   		Variance += (Deviation * Deviation);
    	}
-   fprintf(f_trace,"Total Exec = %u \nTotal Tran = %u\n", Sum_Exec,Sum_Trans);
+   Variance = (trace_size > 0 ? Variance / trace_size : 0);
+   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance = %u\nVariance = %d\n", Sum_Exec,Sum_Trans,Esperance, Variance);
    fclose(f_trace);
 }
 	
