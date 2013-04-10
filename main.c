@@ -3,18 +3,18 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 2000
+#define code_gen_max_blocks 10000
 
 int loop_exec,trace_size = 0;
-unsigned long nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
+unsigned int nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
 unsigned int Read_Adress,Read_Size;
 float ratio;
-unsigned int trace[1000][4];
+unsigned int trace[code_gen_max_blocks][4];
 
 void Trace_Init()
 {
   int i,j;
-  for(i=0;i<1000;i++)
+  for(i=0;i<code_gen_max_blocks;i++)
     for(j=0;j<4;j++) 
       trace[i][j]=0;
 }
@@ -33,11 +33,13 @@ void Display_Stat()
 	printf("exec ratio = %f\n",ratio);	
 }
 	
-void Log_Trace()
+void Log_Trace(unsigned int nb)
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
-	f_trace = fopen("trace.dat", "w");
+	char filename[16]; 
+   snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb);
+	f_trace = fopen(filename, "w");
       	if (f_trace == NULL) {
          	printf("I couldn't open results.dat for writing.\n");
          	exit(EXIT_FAILURE);
@@ -45,7 +47,7 @@ void Log_Trace()
 	fprintf(f_trace,"  i |   Adress | Size | Nb Exec | Nb Tran \n"); 
    for(i=0;i < trace_size;i++) 
    	{
-   		fprintf(f_trace,"%3u | %8x | %4u |  %5u  | %5u \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3]);
+   		fprintf(f_trace,"%03u | %08x | %04u |  %05u  | %05u \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3]);
    		Sum_Exec+=trace[i][2];
    		Sum_Trans+=trace[i][3];
    	}
@@ -106,16 +108,16 @@ void Read_Qemu_Log(FILE *f)
    	else 
    	{	
    		switch(line[0]) {
-      case 'I': next_line_is_adress = 1;
+      case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
 					break;
-      case 'O': sscanf(line+11,"%u",&Read_Size);	
+      case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
 					 i = Lookup_tb(Read_Adress);
 					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					   {
 						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
-						Log_Trace();
+						Log_Trace(nb_flush);
 						printf("Press any key to continue...\n");
 						getchar();    			 		
       			 	}
@@ -123,20 +125,23 @@ void Read_Qemu_Log(FILE *f)
       			 trace[i][1] = Read_Size;
       			 trace[i][3]++;
       			break;
-      case 'T': sscanf(line+22,"%x",&Read_Adress);
+      case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
       			 trace[i][2]++;
 					 nb_exec++;
 					break;     
-		case 'F': printf(line); 			// tb_flush >> must return 
+		case 'F': printf(line); 										// tb_flush >> must return 
+					 Log_Trace(nb_flush);
 					 nb_flush++;
-					 tb_flushed=1;
-					 Log_Trace();
+					 tb_flushed=1;					 
 					 Display_Stat();
 					 trace_size = 0;
 					 Trace_Init();
 					return;
+		case 'm': printf(line);  										// modifying code
+			   	 printf("Press any key to continue...\n");
+					 //getchar();		
       	}
      	}
 
@@ -160,7 +165,7 @@ int main(int argc, char **argv)
    f=fopen(&argv[1][0],"r");
    if(f == NULL)
     {
-        printf("src file not found! Exiting...\n");
+        printf("specified file not found! Exiting...\n");
         return -1;
     }
     
@@ -180,7 +185,7 @@ while(1) {
    	case '1': Read_Qemu_Log(f); break;
    	case '2': Display_Stat();break;
    	case '3': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '4': Log_Trace(nb_tran);break;
+   	case '4': Log_Trace(nb_flush);break;
    	case '0': exit(EXIT_SUCCESS);
    	default:  break;
    	}
