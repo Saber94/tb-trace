@@ -5,10 +5,10 @@
 #define LINE_MAX 100
 #define code_gen_max_blocks 10000
 
-int loop_exec,trace_size = 0;
-unsigned int nb_exec=0, nb_tran=0, nb_flush=0,last_tb_exec;
+unsigned int trace_size = 0;
+unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-float ratio;
+
 unsigned int trace[code_gen_max_blocks][5];
 
 void Trace_Init()
@@ -18,26 +18,12 @@ void Trace_Init()
     for(j=0;j<4;j++) 
       trace[i][j]=0;
 }
- 
-
-void Display_Stat()
-{
-	int i;
-	extern float ratio;
-   printf("\nStat:\n");
-	printf("nb_exec  = %u\n",nb_exec);
-	printf("nb_trans = %u\n",nb_tran);
-	printf("nb_flush = %u\n",nb_flush);
-	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
-	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
-	printf("exec ratio = %f\n",ratio);	
-}
 	
 void Log_Trace(unsigned int nb)
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
-	int Deviation,Esperance;
+	int Deviation,Esperance,nb_pos_dev;
 	long Variance;
 	char filename[16]; 
    snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb);
@@ -53,15 +39,17 @@ void Log_Trace(unsigned int nb)
    	}   
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
+   nb_pos_dev = 0;
 	fprintf(f_trace,"  i |   Adress | Size | Nb Ex | Nb Tr | Deviation \n"); 
    for(i=0;i < trace_size;i++) 
    	{
    		Deviation = trace[i][2] - Esperance;
+   		if (Deviation > 0) nb_pos_dev++;
    		fprintf(f_trace,"%03u | %08x | %04u | %05u | %05u | %+05d \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
-   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance = %u\nVariance = %d\n", Sum_Exec,Sum_Trans,Esperance, Variance);
+   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance = %u\nVariance = %d\nPos values = %u", Sum_Exec,Sum_Trans,Esperance, Variance,nb_pos_dev);
    fclose(f_trace);
 }
 	
@@ -73,26 +61,17 @@ int Lookup_tb(unsigned int Adress)
 	return i;
 }
 
-void display_menu()
-{
-  	printf("\nChoose the command to execute:\n");
-	printf("1 - Read file\n");
-	printf("2 - Display Stat\n");
-	printf("3 - Modify number of instructions into loop\n");
-	printf("4 - Print tb trace table\n");
-	printf("0 - Exit\n");
-	}
-
-void Read_Qemu_Log(FILE *f)
+void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
 {
 	FILE *fdat;
 	int i;
 	int next_line_is_adress=0;
 	int nb_lines=0;
-
+	static unsigned int last_tb_exec;
 	static int tb_flushed =0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
+   float ratio;
 
 	if (tb_flushed) 
 		{
@@ -103,7 +82,7 @@ void Read_Qemu_Log(FILE *f)
          	printf("I couldn't open results.dat for writing.\n");
          	exit(EXIT_FAILURE);
       		}
-			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+			fprintf(fdat, "%d, %f\n", nb_flush, (float)(nb_exec-last_tb_exec)/code_gen_max_blocks);
     		fclose(fdat);
 		}
 
@@ -116,7 +95,7 @@ void Read_Qemu_Log(FILE *f)
    		printf("Translation @ 0x%x ",Read_Adress);
    		}
    	else 
-   	{	
+   	{
    		switch(line[0]) {
       case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
@@ -128,11 +107,12 @@ void Read_Qemu_Log(FILE *f)
 					   {
 						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
 						Log_Trace(nb_flush);
-						printf("Press any key to continue...\n");
-						getchar();    			 		
+						//printf("Press any key to continue...\n");
+						//getchar();    			 		
       			 	}
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
+      			 trace[i][2] = 0;
       			 trace[i][3]++;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
@@ -145,12 +125,18 @@ void Read_Qemu_Log(FILE *f)
 					 Log_Trace(nb_flush);
 					 nb_flush++;
 					 tb_flushed=1;					 
-					 Display_Stat();
+					 printf("\nStat:\n");
+					 printf("nb_exec  = %u\n",nb_exec);
+					 printf("nb_trans = %u\n",nb_tran);
+					 printf("nb_flush = %u\n",nb_flush);
+	   			 printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
+					 ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+					 printf("exec ratio = %f\n",ratio);	
 					 trace_size = 0;
 					 Trace_Init();
 					return;
 		case 'm': printf(line);  										// modifying code
-			   	 printf("Press any key to continue...\n");
+			   	 //printf("Press any key to continue...\n");
 					 //getchar();		
       	}
      	}
@@ -161,7 +147,7 @@ void Read_Qemu_Log(FILE *f)
 
 int main(int argc, char **argv)
 {
-
+	unsigned int loop_exec;
 	FILE *f;
 	char read_char;
 
@@ -187,21 +173,21 @@ int main(int argc, char **argv)
 	if (system( "clear" )) system( "cls" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
    
-   display_menu();
+  	printf("\nChoose the command to execute:\n");
+	printf("1 - Read file\n");
+	printf("2 - Modify number of instructions into loop\n");
+	printf("3 - Print tb trace table\n");
+	printf("0 - Exit\n");
 
-while(1) {
+	while(1) {
    read_char=getchar();
    switch(read_char) {
-   	case '1': Read_Qemu_Log(f); break;
-   	case '2': Display_Stat();break;
-   	case '3': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '4': Log_Trace(nb_flush);break;
+   	case '1': Read_Qemu_Log(f,loop_exec); break;
+   	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
+   	case '3': Log_Trace(nb_flush);break;
    	case '0': exit(EXIT_SUCCESS);
    	default:  break;
    	}
-}
-   
+	}  
    fclose(f);
-
-
 }
