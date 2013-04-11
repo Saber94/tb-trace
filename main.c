@@ -29,7 +29,7 @@ void Log_Trace(unsigned int nb)
    snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb);
 	f_trace = fopen(filename, "w");
       	if (f_trace == NULL) {
-         	printf("I couldn't open results.dat for writing.\n");
+         	printf("I couldn't open trace file for writing.\n");
          	exit(EXIT_FAILURE);
       		}
 	for(i=0;i < trace_size;i++) 
@@ -45,7 +45,7 @@ void Log_Trace(unsigned int nb)
    	{
    		Deviation = trace[i][2] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%03u | %08x | %04u | %05u | %05u | %+05d \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation);
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+05d \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
@@ -75,14 +75,15 @@ void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
 
 	if (tb_flushed) 
 		{
+			ratio = (float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
 			last_tb_exec=nb_exec;
 			tb_flushed=0;
-			fdat = fopen("results.dat", "a");
+			fdat = fopen("ratio.dat", "a");
       	if (fdat == NULL) {
-         	printf("I couldn't open results.dat for writing.\n");
+         	printf("I couldn't open ratio.dat for writing.\n");
          	exit(EXIT_FAILURE);
       		}
-			fprintf(fdat, "%d, %f\n", nb_flush, (float)(nb_exec-last_tb_exec)/code_gen_max_blocks);
+			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     		fclose(fdat);
 		}
 
@@ -166,8 +167,8 @@ int main(int argc, char **argv)
     }
     
    Trace_Init(); 
-   if (remove("results.dat") == -1)
-   perror("Error in deleting a file"); 
+   if (remove("ratio.dat") == -1)
+   	perror("Error in deleting a file"); 
 
 	/* Clear screen at startup */
 	if (system( "clear" )) system( "cls" );
