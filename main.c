@@ -11,6 +11,19 @@ unsigned int Read_Adress,Read_Size;
 
 unsigned int trace[code_gen_max_blocks][5];
 
+char Simulation_Mode()
+{
+	char read_char;
+	printf("Choose the simulation mode:\n");
+	printf("1- Qemu Basic Cache Policy\n");
+	printf("2- Simulate LRU Cache Policy\n");
+	printf("3- Simulate LFU Cache Policy\n");
+	printf("0- Return\n");
+	while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3')) 
+		read_char = getchar();
+	return read_char;
+}
+
 void Trace_Init()
 {
   int i,j;
@@ -19,17 +32,17 @@ void Trace_Init()
       trace[i][j]=0;
 }
 	
-void Log_Trace(unsigned int nb)
+void Log_Trace()
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
 	int Deviation,Esperance,nb_pos_dev;
 	long Variance;
-	char filename[16]; 
-   snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb);
+	char filename[16];
+   snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb_flush);
 	f_trace = fopen(filename, "w");
       	if (f_trace == NULL) {
-         	printf("I couldn't open trace file for writing.\n");
+         	printf("Couldn't open trace file for writing.\n");
          	exit(EXIT_FAILURE);
       		}
 	for(i=0;i < trace_size;i++) 
@@ -49,7 +62,12 @@ void Log_Trace(unsigned int nb)
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
-   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance = %u\nVariance = %d\nPos values = %u", Sum_Exec,Sum_Trans,Esperance, Variance,nb_pos_dev);
+   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
+   				 Sum_Exec,
+   				 Sum_Trans,
+   				 Esperance, 
+   				 Variance, 
+   				 nb_pos_dev);
    fclose(f_trace);
 }
 	
@@ -61,7 +79,7 @@ int Lookup_tb(unsigned int Adress)
 	return i;
 }
 
-void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
+void Run(char mode, FILE *f,unsigned int loop_exec)
 {
 	FILE *fdat;
 	int i;
@@ -80,7 +98,7 @@ void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
 			tb_flushed=0;
 			fdat = fopen("ratio.dat", "a");
       	if (fdat == NULL) {
-         	printf("I couldn't open ratio.dat for writing.\n");
+         	printf("Couldn't open ratio file for writing.\n");
          	exit(EXIT_FAILURE);
       		}
 			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
@@ -107,7 +125,7 @@ void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
 					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					   {
 						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
-						Log_Trace(nb_flush);
+						Log_Trace();
 						//printf("Press any key to continue...\n");
 						//getchar();    			 		
       			 	}
@@ -123,7 +141,7 @@ void Read_Qemu_Log(FILE *f,unsigned int loop_exec)
 					 nb_exec++;
 					break;     
 		case 'F': printf(line); 										// tb_flush >> must return 
-					 Log_Trace(nb_flush);
+					 Log_Trace();
 					 nb_flush++;
 					 tb_flushed=1;					 
 					 printf("\nStat:\n");
@@ -151,6 +169,7 @@ int main(int argc, char **argv)
 	unsigned int loop_exec;
 	FILE *f;
 	char read_char;
+	int Sim_mode = 0;
 
 	if (argc<2) 
 	{
@@ -175,20 +194,23 @@ int main(int argc, char **argv)
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
    
   	printf("\nChoose the command to execute:\n");
-	printf("1 - Read file\n");
+	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of instructions into loop\n");
 	printf("3 - Print tb trace table\n");
+	printf("4 - Change Simulated cache policy\n");	
 	printf("0 - Exit\n");
 
 	while(1) {
    read_char=getchar();
    switch(read_char) {
-   	case '1': Read_Qemu_Log(f,loop_exec); break;
+   	case '1': Run(Sim_mode, f,loop_exec); break;
    	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '3': Log_Trace(nb_flush);break;
-   	case '0': exit(EXIT_SUCCESS);
+   	case '3': Log_Trace();break;
+   	case '4': Sim_mode = Simulation_Mode();printf("\nChoose the main command to execute:\n");break;
+   	case '0': return;
    	default:  break;
    	}
-	}  
+	}
    fclose(f);
+   exit(EXIT_SUCCESS);
 }
