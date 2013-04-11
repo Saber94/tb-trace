@@ -9,10 +9,12 @@ char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
 unsigned int trace[code_gen_max_blocks][5];
-unsigned int trace_size = 0;
+unsigned int trace_size;
 
 int sort_row;
 
+
+/* ------------ Function used to get simulation mode ------------ */
 char Simulation_Mode()
 {
 	char read_char;
@@ -21,19 +23,23 @@ char Simulation_Mode()
 	printf("2- Simulate LRU Cache Policy\n");
 	printf("3- Simulate LFU Cache Policy\n");
 	printf("0- Return\n");
-	while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3')) 
-		read_char = getchar();
+	do {read_char = getchar();} while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3'));
 	return read_char;
 }
 
+
+/* ------------ Used to erase trace[][] ------------ */
 void Trace_Init()
 {
-  int i,j;
-  for(i=0;i<code_gen_max_blocks;i++)
+	trace_size = 0;
+   int i,j;
+   for(i=0;i<code_gen_max_blocks;i++)
     for(j=0;j<4;j++) 
       trace[i][j]=0;
 }
-	
+
+
+/* ------------ Dump actual trace[][] content into file ------------ */	
 void Log_Trace(char *filename)
 {
 	FILE *f_trace;
@@ -76,7 +82,8 @@ void Log_Trace(char *filename)
    fclose(f_trace);
    printf("Trace file recorded to %s\n",filename);
 }
-	
+
+/* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
 int Lookup_tb(unsigned int Adress)
 {
 	int i=0;
@@ -85,6 +92,8 @@ int Lookup_tb(unsigned int Adress)
 	return i;
 }
 
+
+/* ------------ Run simulation of cache policy by walking log file ------------ */
 void Run(char mode, FILE *f,unsigned int loop_exec)
 {
 	FILE *fdat;
@@ -109,10 +118,9 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       		}
 			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     		fclose(fdat);
-    		trace_size = 0;
     		Trace_Init();
 		}
-	if (mode = '0') {
+	if (mode == '0') {
 	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
    {
    	if (next_line_is_adress) 
@@ -131,12 +139,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			 printf("[size = %3u]\n",Read_Size);
 					 i = Lookup_tb(Read_Adress);
 					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
-					   {
-						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
-						//Log_Trace();
-						//printf("Press any key to continue...\n");
-						//getchar();    			 		
-      			 	}
+					   {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]); 			 		}
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
       			 trace[i][2] = 0;
@@ -163,18 +166,17 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 printf("exec ratio = %f\n",ratio);	
 					return;
 		case 'm': printf(line);  										// modifying code
-			   	 //printf("Press any key to continue...\n");
-					 //getchar();		
+	
       	}
      	}
 
 	nb_lines++;   
    }
    }
-   else printf("Simulation not implemented yet!\n");
+   else printf("Simulation policy not implemented yet!\n");
 }
 
-
+/* ------------ Needed for qsort() ------------ */
 int cmp ( const void *pa, const void *pb ) {
     const int (*a)[5] = pa;
     const int (*b)[5] = pb;
@@ -183,8 +185,8 @@ int cmp ( const void *pa, const void *pb ) {
     return 0;
 }
 
-
-void Analyse_Daty()
+/* ------------ Analyse extracted trace[][] data ------------ */
+void Analyse_Data()
 {
 	char read_char;
 	getchar();
@@ -196,7 +198,7 @@ void Analyse_Daty()
 	switch(read_char) { 
 		case '1': sort_row = 2;break;
 		case '2': sort_row = 4;break;
-		default : printf("Unknown sort criteria\n");return;
+		default : if (read_char!='0') {printf("Unknown sort criteria\n");} return;
 		}
 	qsort (trace, trace_size, 5*sizeof(unsigned int), cmp);
 	printf("Sort terminated of %u data by %s of execution\n",trace_size,(sort_row==2 ? "number":"date"));
@@ -205,12 +207,13 @@ void Analyse_Daty()
 
 }
 
+/* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
 	unsigned int loop_exec;
 	FILE *f;
 	char read_char;
-	int Sim_mode = 0;
+	char Sim_mode = '0';
 	if (argc<2) 
 	{
 		printf("Should pass trace file as argument!\n");
@@ -233,8 +236,7 @@ int main(int argc, char **argv)
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
 
 	while(1) {	
-	//if (first_screen) 
-	//	{getchar();first_screen = 1;}
+
 	printf("\nChoose the command to execute:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of instructions into loop\n");
@@ -255,7 +257,7 @@ int main(int argc, char **argv)
    	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
    	case '3': if (trace_size) {sprintf(filename,"DummyTrace.dat"); Log_Trace(filename);}break;
    	case '4': Sim_mode = Simulation_Mode();break;
-   	case '5': Analyse_Daty();break;
+   	case '5': if (trace_size) {Analyse_Data();} break;
    	default:  break;
    	}
 	}
