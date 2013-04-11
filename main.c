@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 10000
+#define code_gen_max_blocks 1000
 
 unsigned int trace_size = 0;
 unsigned int nb_exec, nb_tran, nb_flush;
@@ -53,17 +53,18 @@ void Log_Trace()
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i |   Adress | Size | Nb Ex | Nb Tr | Deviation \n"); 
+	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  | Last Exec\n"); 
    for(i=0;i < trace_size;i++) 
    	{
    		Deviation = trace[i][2] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+05d \n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation);
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation,trace[i][4]);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
-   fprintf(f_trace,"\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
+   fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
+   				 nb_exec,
    				 Sum_Trans,
    				 Esperance, 
    				 Variance, 
@@ -125,7 +126,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					   {
 						printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);
-						Log_Trace();
+						//Log_Trace();
 						//printf("Press any key to continue...\n");
 						//getchar();    			 		
       			 	}
@@ -138,6 +139,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
       			 trace[i][2]++;
+      			 trace[i][4] = nb_exec;
 					 nb_exec++;
 					break;     
 		case 'F': printf(line); 										// tb_flush >> must return 
