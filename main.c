@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 1000
+#define code_gen_max_blocks 2000
 
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
@@ -78,9 +78,9 @@ void Log_Trace(char *filename)
 }
 
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
-int Lookup_tb(unsigned int Adress,unsigned int start)
+int Lookup_tb(unsigned int Adress)
 {  
-	unsigned int i = start;
+	unsigned int i = 0;
 	while((i<trace_size) && (trace[i][0]!=Adress)) i++;
 	if (Adress!=trace[i][0]) trace_size++;
 	return i;
@@ -134,10 +134,9 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 						sort_row = 4;
 						nb_flush++;
 						tb_flushed = 1;						
-						qsort (trace, trace_size, 5 * sizeof(unsigned int), cmp);
+						qsort(trace, trace_size, 5 * sizeof(unsigned int), cmp);
 						snprintf(filename, sizeof(char) * 16, "Trace_LRU.dat");
 					   Log_Trace(filename);
-
 						trace_size/=5;
 						Trace_Init(trace_size);
 						printf("\nLRU simulation flush here, cache hit since last flush = %u\n",tb_hit);						
@@ -154,10 +153,9 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
-					 i = Lookup_tb(Read_Adress,last_trace_size);
+					 i = Lookup_tb(Read_Adress);
 					 //if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
 					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);}
-					 if (i<last_trace_size) tb_hit++;
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
       			 trace[i][2] = 0;
@@ -165,7 +163,8 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
-      			 i = Lookup_tb(Read_Adress,0);
+      			 i = Lookup_tb(Read_Adress);
+					 if (i<last_trace_size) tb_hit++;
       			 trace[i][2]++;
       			 trace[i][4] = nb_exec;
 					 nb_exec++;
