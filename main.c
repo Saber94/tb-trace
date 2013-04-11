@@ -5,11 +5,13 @@
 #define LINE_MAX 100
 #define code_gen_max_blocks 1000
 
-unsigned int trace_size = 0;
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
 
 unsigned int trace[code_gen_max_blocks][5];
+unsigned int trace_size = 0;
+
+int sort_row;
 
 char Simulation_Mode()
 {
@@ -62,6 +64,9 @@ void Log_Trace()
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
+   
+   printf("\n------------------------------------------------------\n");
+   
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
    				 nb_exec,
@@ -104,8 +109,10 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       		}
 			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     		fclose(fdat);
+    		trace_size = 0;
+    		Trace_Init();
 		}
-
+	if (mode = '0') {
 	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
    {
    	if (next_line_is_adress) 
@@ -153,8 +160,6 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 	   			 printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
 					 ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
 					 printf("exec ratio = %f\n",ratio);	
-					 trace_size = 0;
-					 Trace_Init();
 					return;
 		case 'm': printf(line);  										// modifying code
 			   	 //printf("Press any key to continue...\n");
@@ -164,6 +169,37 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 
 	nb_lines++;   
    }
+   }
+   else printf("Simulation not implemented yet!\n");
+}
+
+
+int cmp ( const void *pa, const void *pb ) {
+    const int (*a)[5] = pa;
+    const int (*b)[5] = pb;
+    if ( (*a)[sort_row] < (*b)[sort_row] ) return +1;
+    if ( (*a)[sort_row] > (*b)[sort_row] ) return -1;
+    return 0;
+}
+
+
+void Analyse_Daty()
+{
+	char read_char;
+
+	printf("Choose analyse method:\n");
+	printf("1 - Sort Trace by Most Exec\n");
+	printf("2 - Sort Trace by Most Recently Exec\n");
+	printf("0 - Return\n");
+	read_char = getchar();
+	switch(read_char) { 
+		case '1': sort_row = 2;break;
+		case '2': sort_row = 4;break;
+		default : printf("Unknown sort criteria\n");return;
+		}
+	qsort (trace, trace_size, 5*sizeof(unsigned int), cmp);
+	Log_Trace(); // should spec sort file
+	printf("Sort terminated of %u data\n",trace_size);
 }
 
 int main(int argc, char **argv)
@@ -194,22 +230,25 @@ int main(int argc, char **argv)
 	/* Clear screen at startup */
 	if (system( "clear" )) system( "cls" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
-   
-  	printf("\nChoose the command to execute:\n");
+
+	printf("\nChoose the command to execute:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of instructions into loop\n");
 	printf("3 - Print tb trace table\n");
-	printf("4 - Change Simulated cache policy\n");	
-	printf("0 - Exit\n");
+	printf("4 - Change Simulated cache policy\n");
+	printf("5 - Analyse Trace Data\n");
+	printf("0 - Exit\n");  
 
 	while(1) {
-   read_char=getchar();
+
+	read_char = getchar();
    switch(read_char) {
+   	case '0': return;   	
    	case '1': Run(Sim_mode, f,loop_exec); break;
    	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
    	case '3': Log_Trace();break;
-   	case '4': Sim_mode = Simulation_Mode();printf("\nChoose the main command to execute:\n");break;
-   	case '0': return;
+   	case '4': Sim_mode = Simulation_Mode();break;
+   	case '5': Analyse_Daty();break;
    	default:  break;
    	}
 	}
