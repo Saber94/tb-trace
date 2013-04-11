@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 2000
+#define code_gen_max_blocks 1000
 
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
@@ -258,9 +258,9 @@ int main(int argc, char **argv)
 
 	while(1) {	
 
-	printf("\nChoose the command to execute:\n");
+	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
-	printf("2 - Modify number of instructions into loop\n");
+	printf("2 - Modify number of lines into loop\n");
 	printf("3 - Print tb trace table\n");
 	printf("4 - Change Simulated cache policy\n");
 	printf("5 - Analyse Trace Data\n");
