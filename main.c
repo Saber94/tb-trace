@@ -5,9 +5,9 @@
 #define LINE_MAX 100
 #define code_gen_max_blocks 1000
 
+char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-
 unsigned int trace[code_gen_max_blocks][5];
 unsigned int trace_size = 0;
 
@@ -34,14 +34,13 @@ void Trace_Init()
       trace[i][j]=0;
 }
 	
-void Log_Trace()
+void Log_Trace(char *filename)
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
 	int Deviation,Esperance,nb_pos_dev;
 	long Variance;
-	char filename[16];
-   snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb_flush);
+
 	f_trace = fopen(filename, "w");
       	if (f_trace == NULL) {
          	printf("Couldn't open trace file for writing.\n");
@@ -65,7 +64,7 @@ void Log_Trace()
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
    
-   printf("\n------------------------------------------------------\n");
+   fprintf(f_trace,"\n------------------------------------------------------\n");
    
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
@@ -75,6 +74,7 @@ void Log_Trace()
    				 Variance, 
    				 nb_pos_dev);
    fclose(f_trace);
+   printf("Trace file recorded to %s\n",filename);
 }
 	
 int Lookup_tb(unsigned int Adress)
@@ -150,7 +150,8 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 nb_exec++;
 					break;     
 		case 'F': printf(line); 										// tb_flush >> must return 
-					 Log_Trace();
+   				 snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb_flush);
+					 Log_Trace(filename);
 					 nb_flush++;
 					 tb_flushed=1;					 
 					 printf("\nStat:\n");
@@ -186,7 +187,7 @@ int cmp ( const void *pa, const void *pb ) {
 void Analyse_Daty()
 {
 	char read_char;
-
+	getchar();
 	printf("Choose analyse method:\n");
 	printf("1 - Sort Trace by Most Exec\n");
 	printf("2 - Sort Trace by Most Recently Exec\n");
@@ -198,8 +199,10 @@ void Analyse_Daty()
 		default : printf("Unknown sort criteria\n");return;
 		}
 	qsort (trace, trace_size, 5*sizeof(unsigned int), cmp);
-	Log_Trace(); // should spec sort file
-	printf("Sort terminated of %u data\n",trace_size);
+	printf("Sort terminated of %u data by %s of execution\n",trace_size,(sort_row==2 ? "number":"date"));
+	sprintf(filename,"Sort.dat");
+	Log_Trace(filename); // should spec sort file
+
 }
 
 int main(int argc, char **argv)
@@ -208,7 +211,6 @@ int main(int argc, char **argv)
 	FILE *f;
 	char read_char;
 	int Sim_mode = 0;
-
 	if (argc<2) 
 	{
 		printf("Should pass trace file as argument!\n");
@@ -227,10 +229,12 @@ int main(int argc, char **argv)
    if (remove("ratio.dat") == -1)
    	perror("Error in deleting a file"); 
 
-	/* Clear screen at startup */
-	if (system( "clear" )) system( "cls" );
+	system( "clear" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
 
+	while(1) {	
+	//if (first_screen) 
+	//	{getchar();first_screen = 1;}
 	printf("\nChoose the command to execute:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of instructions into loop\n");
@@ -239,14 +243,17 @@ int main(int argc, char **argv)
 	printf("5 - Analyse Trace Data\n");
 	printf("0 - Exit\n");  
 
-	while(1) {
-
-	read_char = getchar();
+	do {read_char = getchar();} while((read_char !='0') && 
+												 (read_char !='1') && 
+												 (read_char !='2') && 
+												 (read_char !='3') && 
+												 (read_char !='4') && 
+												 (read_char !='5'));
    switch(read_char) {
    	case '0': return;   	
    	case '1': Run(Sim_mode, f,loop_exec); break;
    	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '3': Log_Trace();break;
+   	case '3': if (trace_size) {sprintf(filename,"DummyTrace.dat"); Log_Trace(filename);}break;
    	case '4': Sim_mode = Simulation_Mode();break;
    	case '5': Analyse_Daty();break;
    	default:  break;
