@@ -10,34 +10,28 @@ unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
 unsigned int trace[code_gen_max_blocks][5];
 unsigned int trace_size;
-
+unsigned int last_trace_size = 0;
+unsigned int tb_hit = 0;
 int sort_row;
 
-
-/* ------------ Function used to get simulation mode ------------ */
-char Simulation_Mode()
-{
-	char read_char;
-	printf("Choose the simulation mode:\n");
-	printf("1- Qemu Basic Cache Policy\n");
-	printf("2- Simulate LRU Cache Policy\n");
-	printf("3- Simulate LFU Cache Policy\n");
-	printf("0- Return\n");
-	do {read_char = getchar();} while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3'));
-	return read_char;
-}
-
-
 /* ------------ Used to erase trace[][] ------------ */
-void Trace_Init()
+void Trace_Init(int start)
 {
 	trace_size = 0;
    int i,j;
-   for(i=0;i<code_gen_max_blocks;i++)
+   for(i=start;i<code_gen_max_blocks;i++)
     for(j=0;j<4;j++) 
       trace[i][j]=0;
 }
 
+/* ------------ Needed for qsort() ------------ */
+int cmp ( const void *pa, const void *pb ) {
+    const int (*a)[5] = pa;
+    const int (*b)[5] = pb;
+    if ( (*a)[sort_row] < (*b)[sort_row] ) return +1;
+    if ( (*a)[sort_row] > (*b)[sort_row] ) return -1;
+    return 0;
+}
 
 /* ------------ Dump actual trace[][] content into file ------------ */	
 void Log_Trace(char *filename)
@@ -84,9 +78,9 @@ void Log_Trace(char *filename)
 }
 
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
-int Lookup_tb(unsigned int Adress)
-{
-	int i=0;
+int Lookup_tb(unsigned int Adress,unsigned int start)
+{  
+	unsigned int i = start;
 	while((i<trace_size) && (trace[i][0]!=Adress)) i++;
 	if (Adress!=trace[i][0]) trace_size++;
 	return i;
@@ -107,20 +101,20 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
    float ratio;
 
 	if (tb_flushed) 
-		{
-			ratio = (float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
-			last_tb_exec=nb_exec;
-			tb_flushed=0;
-			fdat = fopen("ratio.dat", "a");
-      	if (fdat == NULL) {
-         	printf("Couldn't open ratio file for writing.\n");
-         	exit(EXIT_FAILURE);
-      		}
-			fprintf(fdat, "%d, %f\n", nb_flush, ratio);
-    		fclose(fdat);
-    		Trace_Init();
-		}
-	if (mode == '0') {
+	{
+		ratio = (float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+		last_tb_exec=nb_exec;
+		tb_flushed=0;
+		fdat = fopen("ratio.dat", "a");
+      if (fdat == NULL) {
+         printf("Couldn't open ratio file for writing.\n");
+        	exit(EXIT_FAILURE);
+      	}
+		fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+    	fclose(fdat);
+    	if (mode == '1') Trace_Init(0);
+	}
+
 	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
    {
    	if (next_line_is_adress) 
@@ -134,12 +128,36 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
    		switch(line[0]) {
       case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
+					 if (((nb_tran%1000)==0) && (mode == '2')) 
+					 	{
+					 	last_trace_size = trace_size;
+						sort_row = 4;
+						nb_flush++;
+						tb_flushed = 1;						
+						qsort (trace, trace_size, 5 * sizeof(unsigned int), cmp);
+						snprintf(filename, sizeof(char) * 16, "Trace_LRU.dat");
+					   Log_Trace(filename);
+
+						trace_size/=5;
+						Trace_Init(trace_size);
+						printf("\nLRU simulation flush here, cache hit since last flush = %u\n",tb_hit);						
+						printf("\nStat:\n");					 	
+					 	printf("nb_exec  = %u\n",nb_exec);
+					 	printf("nb_trans = %u\n",nb_tran);
+						printf("nb_flush = %u\n",nb_flush);
+	   			 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
+					 	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+					 	printf("exec ratio = %f\n",ratio);
+						tb_hit = 0;
+						return;					 		
+					 		}
 					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
-					 i = Lookup_tb(Read_Adress);
-					 if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
-					   {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]); 			 		}
+					 i = Lookup_tb(Read_Adress,last_trace_size);
+					 //if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
+					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);}
+					 if (i<last_trace_size) tb_hit++;
       			 trace[i][0] = Read_Adress;
       			 trace[i][1] = Read_Size;
       			 trace[i][2] = 0;
@@ -147,13 +165,14 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
-      			 i = Lookup_tb(Read_Adress);
+      			 i = Lookup_tb(Read_Adress,0);
       			 trace[i][2]++;
       			 trace[i][4] = nb_exec;
 					 nb_exec++;
 					break;     
-		case 'F': printf(line); 										// tb_flush >> must return 
-   				 snprintf(filename, sizeof(char) * 16, "trace_%u.dat", nb_flush);
+		case 'F': if (mode == '1') 			// Qemu basic cache policy
+					{printf(line); 										// tb_flush >> must return 
+   				 snprintf(filename, sizeof(char) * 16, "Trace_%u.dat", nb_flush);
 					 Log_Trace(filename);
 					 nb_flush++;
 					 tb_flushed=1;					 
@@ -165,24 +184,14 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
 					 printf("exec ratio = %f\n",ratio);	
 					return;
-		case 'm': printf(line);  										// modifying code
+					} 
+		//case 'm': printf(line);  										// modifying code
 	
       	}
      	}
-
 	nb_lines++;   
    }
-   }
-   else printf("Simulation policy not implemented yet!\n");
-}
 
-/* ------------ Needed for qsort() ------------ */
-int cmp ( const void *pa, const void *pb ) {
-    const int (*a)[5] = pa;
-    const int (*b)[5] = pb;
-    if ( (*a)[sort_row] < (*b)[sort_row] ) return +1;
-    if ( (*a)[sort_row] > (*b)[sort_row] ) return -1;
-    return 0;
 }
 
 /* ------------ Analyse extracted trace[][] data ------------ */
@@ -191,13 +200,13 @@ void Analyse_Data()
 	char read_char;
 	getchar();
 	printf("Choose analyse method:\n");
-	printf("1 - Sort Trace by Most Exec\n");
-	printf("2 - Sort Trace by Most Recently Exec\n");
+	printf("1 - Sort Trace by Most Recently Exec\n");
+	printf("2 - Sort Trace by Most Exec\n");
 	printf("0 - Return\n");
 	read_char = getchar();
 	switch(read_char) { 
-		case '1': sort_row = 2;break;
-		case '2': sort_row = 4;break;
+		case '1': sort_row = 4;break;
+		case '2': sort_row = 2;break;
 		default : if (read_char!='0') {printf("Unknown sort criteria\n");} return;
 		}
 	qsort (trace, trace_size, 5*sizeof(unsigned int), cmp);
@@ -207,13 +216,26 @@ void Analyse_Data()
 
 }
 
+/* ------------ Function used to get simulation mode ------------ */
+char Simulation_Mode()
+{
+	char read_char;
+	printf("Choose the simulation mode:\n");
+	printf("1- Qemu Basic Cache Policy\n");
+	printf("2- Simulate LRU Cache Policy\n");
+	printf("3- Simulate LFU Cache Policy\n");
+	printf("0- Return\n");
+	do {read_char = getchar();} while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3'));
+	return read_char;
+}
+
 /* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
 	unsigned int loop_exec;
 	FILE *f;
 	char read_char;
-	char Sim_mode = '0';
+	char Sim_mode = '1';
 	if (argc<2) 
 	{
 		printf("Should pass trace file as argument!\n");
@@ -228,7 +250,7 @@ int main(int argc, char **argv)
         return -1;
     }
     
-   Trace_Init(); 
+   Trace_Init(0); 
    if (remove("ratio.dat") == -1)
    	perror("Error in deleting a file"); 
 
