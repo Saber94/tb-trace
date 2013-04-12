@@ -5,18 +5,19 @@
 #define LINE_MAX 100
 #define CODE_GEN_MAX_BLOCKS 1000
 
-#define ADRESS 0
-#define SIZE 1
-#define NB_EXEC 2
-#define NB_TRANS 3
-#define LAST_EXEC 4
-#define VALIDE 5
-#define TRACE_ROWS 6
+
+#define ADRESS 		0
+#define SIZE 			1
+#define NB_EXEC 		2
+#define NB_TRANS 		3
+#define LAST_EXEC 	4
+#define VALIDE 		5
+#define TRACE_ROWS 	6
 
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int trace[2*CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
@@ -26,11 +27,10 @@ int sort_row;
 void Trace_Init(int start)
 {
 	int i,j;
-	trace_size = 0;
 	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
    for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
     for(j=0;j<TRACE_ROWS;j++) 
-      trace[i][j]=0;
+      trace[i][j]=0;   
 }
 
 /* ------------ Needed for qsort() ------------ */
@@ -105,7 +105,7 @@ int Lookup_tb(unsigned int Adress)
 
 
 /* ------------ Run simulation of cache policy by walking log file ------------ */
-void Run(char mode, FILE *f,unsigned int loop_exec)
+void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 {
 	FILE *fdat;
 	int i;
@@ -115,6 +115,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 	static int tb_flushed =0;
    char line[LINE_MAX];
    char tmp[LINE_MAX];
+   char RLU_RFU = '_';
    float ratio;
 
 	if (tb_flushed) 
@@ -130,6 +131,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 		fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     	fclose(fdat);
     	if (mode == '1') Trace_Init(0);
+    	trace_size = 0;
 	}
 
 	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
@@ -145,30 +147,34 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
    		switch(line[0]) {
       case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
-					 if (((nb_tran%CODE_GEN_MAX_BLOCKS)==0) && (mode == '2')) 
-					 	{
+					 if ( ((nb_tran%CODE_GEN_MAX_BLOCKS)==0) && ((mode == '2') || (mode == '3')) )
+					 {
+					  	if (mode == '2') 
+					  	 	{sort_row = 4; RLU_RFU = 'R';} // LRU
+					 	else 
+					 	 	{sort_row = 2; RLU_RFU = 'F';} // mode == 3 : LFU
 					 	last_trace_size = trace_size;
-						sort_row = 4;
 						nb_flush++;
 						tb_flushed = 1;						
 						qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
-						snprintf(filename, sizeof(char) * 16, "Trace_LRU.dat");
+						snprintf(filename, sizeof(char) * 16, "Trace_L%cU.dat",RLU_RFU);
 					   Dump_Trace(filename);
-						trace_size/=5;
+						trace_size/=quota;																								// Quota !??
 						Trace_Init(trace_size);
-						printf("\nLRU simulation flush here, cache hit since last flush = %u\n",tb_hit);						
+						printf("\nL%cU cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,tb_hit);						
 						printf("\nStat:\n");					 	
-					 	printf("nb_exec  = %u\n",nb_exec);
-					 	printf("nb_trans = %u\n",nb_tran);
-						printf("nb_flush = %u\n",nb_flush);
-	   			 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
+					 	printf("nb_exec                  = %u\n",nb_exec);
+					 	printf("nb_trans                 = %u\n",nb_tran);
+						printf("nb_flush                 = %u\n",nb_flush);
+	   			 	printf("exec since last flush    = %u\n",nb_exec-last_tb_exec);
 					 	ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
-					 	printf("exec ratio = %f\n",ratio);
+					 	printf("exec/trans ratio         = %f\n",ratio);
 					 	ratio = ((float)tb_hit / (nb_exec-last_tb_exec));
-					 	printf("cache hit ratio = %f\n",ratio);
+					 	printf("cache_hit/nb_exec ratio  = %f\n",ratio);
 						tb_hit = 0;
-						return;					 		
-					 		}
+						return;
+					}	 		
+					 		
 					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
@@ -182,7 +188,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			 trace[i][VALIDE] = 0;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
-      			 printf("Execution   @ 0x%x\n",Read_Adress); 
+      			 printf("Execution   @ 0x%x\n",Read_Adress);
       			 i = Lookup_tb(Read_Adress);
 					 if ((i<last_trace_size) && (trace[i][VALIDE])) tb_hit++;
       			 trace[i][NB_EXEC]++;
@@ -257,6 +263,7 @@ char Simulation_Mode(char Sim_mode)
 int main(int argc, char **argv)
 {
 	unsigned int loop_exec;
+	int quota = 5;
 	FILE *f;
 	char read_char;
 	char Sim_mode = '1';
@@ -286,9 +293,10 @@ int main(int argc, char **argv)
 	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of steps into loop\n");
-	printf("3 - Change Simulated cache policy\n");	
-	printf("4 - Dump Trace Data\n");
-	printf("5 - Analyse Trace Data\n");
+	printf("3 - Modify Quota of simulated cache policy\n");	
+	printf("4 - Change Simulated cache policy\n");	
+	printf("5 - Dump Trace Data\n");
+	printf("6 - Analyse Trace Data\n");
 	printf("0 - Exit\n");  
 
 	do {read_char = getchar();} while((read_char !='0') && 
@@ -298,16 +306,18 @@ int main(int argc, char **argv)
 												 (read_char !='4') && 
 												 (read_char !='5'));
    switch(read_char) {
-   	case '0': return;   	
-   	case '1': Run(Sim_mode, f,loop_exec); 
+   	case '0': return;   	// exit program
+   	case '1': Run(Sim_mode, f,loop_exec,quota); 
    					break;
    	case '2': printf("Actual loop_exec=%d, Enter new value(0 for continuous loop) : ",loop_exec);scanf("%u",&loop_exec);
    					break;
-   	case '3': Sim_mode = Simulation_Mode(Sim_mode);
-   					break;   	
-   	case '4': if (trace_size) {sprintf(filename,"DumpTrace.dat"); Dump_Trace(filename);} 
+   	case '3': do {printf("Actual Quota=1/%d, Enter new value : 1/",quota);scanf("%d",&quota);} while(quota < 1);
+   					break;
+   	case '4': Sim_mode = Simulation_Mode(Sim_mode);
+   					break;
+   	case '5': if (trace_size) {sprintf(filename,"DumpTrace.dat"); Dump_Trace(filename);} 
    					else {printf("No trace data available!\n");} break;
-   	case '5': if (trace_size) {Analyse_Data();} 
+   	case '6': if (trace_size) {Analyse_Data();}
    					else {printf("No trace data available!\n");} break;
    	default:  break;
    	}
