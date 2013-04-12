@@ -3,12 +3,19 @@
 #include <stdlib.h>
 
 #define LINE_MAX 100
-#define code_gen_max_blocks 1000
+#define CODE_GEN_MAX_BLOCKS 1000
+
+#define ADRESS 0
+#define SIZE 1
+#define NB_EXEC 2
+#define NB_TRANS 3
+#define LAST_EXEC 4
+#define TRACE_ROWS 5
 
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-unsigned int trace[code_gen_max_blocks][5];
+unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
@@ -19,8 +26,8 @@ void Trace_Init(int start)
 {
 	trace_size = 0;
    int i,j;
-   for(i=start;i<code_gen_max_blocks;i++)
-    for(j=0;j<4;j++) 
+   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)
+    for(j=0;j<TRACE_ROWS;j++) 
       trace[i][j]=0;
 }
 
@@ -34,7 +41,7 @@ int cmp ( const void *pa, const void *pb ) {
 }
 
 /* ------------ Dump actual trace[][] content into file ------------ */	
-void Log_Trace(char *filename)
+void Dump_Trace(char *filename)
 {
 	FILE *f_trace;
 	int i,Sum_Exec=0,Sum_Trans=0;
@@ -48,8 +55,8 @@ void Log_Trace(char *filename)
       		}
 	for(i=0;i < trace_size;i++) 
    	{
-   		Sum_Exec+=trace[i][2];
-   		Sum_Trans+=trace[i][3];
+   		Sum_Exec+=trace[i][NB_EXEC];
+   		Sum_Trans+=trace[i][NB_TRANS];
    	}   
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
@@ -57,14 +64,14 @@ void Log_Trace(char *filename)
 	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  | Last Exec\n"); 
    for(i=0;i < trace_size;i++) 
    	{
-   		Deviation = trace[i][2] - Esperance;
+   		Deviation = trace[i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",i,trace[i][0],trace[i][1],trace[i][2],trace[i][3],Deviation,trace[i][4]);
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",i,trace[i][ADRESS],trace[i][SIZE],trace[i][NB_EXEC],trace[i][NB_TRANS],Deviation,trace[i][LAST_EXEC]);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
    
-   fprintf(f_trace,"\n------------------------------------------------------\n");
+   fprintf(f_trace,"\n-------------------------------------------------------\n");
    
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
@@ -81,8 +88,8 @@ void Log_Trace(char *filename)
 int Lookup_tb(unsigned int Adress)
 {  
 	unsigned int i = 0;
-	while((i<trace_size) && (trace[i][0]!=Adress)) i++;
-	if (Adress!=trace[i][0]) trace_size++;
+	while((i<trace_size) && (trace[i][ADRESS]!=Adress)) i++;
+	if (Adress!=trace[i][ADRESS]) trace_size++;
 	return i;
 }
 
@@ -102,7 +109,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 
 	if (tb_flushed) 
 	{
-		ratio = (float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+		ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
 		last_tb_exec=nb_exec;
 		tb_flushed=0;
 		fdat = fopen("ratio.dat", "a");
@@ -134,9 +141,9 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 						sort_row = 4;
 						nb_flush++;
 						tb_flushed = 1;						
-						qsort(trace, trace_size, 5 * sizeof(unsigned int), cmp);
+						qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 						snprintf(filename, sizeof(char) * 16, "Trace_LRU.dat");
-					   Log_Trace(filename);
+					   Dump_Trace(filename);
 						trace_size/=5;
 						Trace_Init(trace_size);
 						printf("\nLRU simulation flush here, cache hit since last flush = %u\n",tb_hit);						
@@ -145,7 +152,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 	printf("nb_trans = %u\n",nb_tran);
 						printf("nb_flush = %u\n",nb_flush);
 	   			 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
-					 	ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+					 	ratio=(float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
 					 	printf("exec ratio = %f\n",ratio);
 						tb_hit = 0;
 						return;					 		
@@ -154,25 +161,25 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
 					 i = Lookup_tb(Read_Adress);
-					 //if ((trace[i][1]!=0) && (trace[i][1]!=Read_Size))
-					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][1]);}
-      			 trace[i][0] = Read_Adress;
-      			 trace[i][1] = Read_Size;
-      			 trace[i][2] = 0;
-      			 trace[i][3]++;
+					 //if ((trace[i][SIZE]!=0) && (trace[i][SIZE]!=Read_Size))
+					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][SIZE]);}
+      			 trace[i][ADRESS] = Read_Adress;
+      			 trace[i][SIZE] = Read_Size;
+      			 trace[i][NB_EXEC] = 0;
+      			 trace[i][NB_TRANS]++;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
 					 if (i<last_trace_size) tb_hit++;
-      			 trace[i][2]++;
-      			 trace[i][4] = nb_exec;
+      			 trace[i][NB_EXEC]++;
+      			 trace[i][LAST_EXEC] = nb_exec;
 					 nb_exec++;
 					break;     
 		case 'F': if (mode == '1') 			// Qemu basic cache policy
 					{printf(line); 										// tb_flush >> must return 
    				 snprintf(filename, sizeof(char) * 16, "Trace_%u.dat", nb_flush);
-					 Log_Trace(filename);
+					 Dump_Trace(filename);
 					 nb_flush++;
 					 tb_flushed=1;					 
 					 printf("\nStat:\n");
@@ -180,7 +187,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 printf("nb_trans = %u\n",nb_tran);
 					 printf("nb_flush = %u\n",nb_flush);
 	   			 printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
-					 ratio=(float)(nb_exec-last_tb_exec)/code_gen_max_blocks;
+					 ratio=(float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
 					 printf("exec ratio = %f\n",ratio);	
 					return;
 					} 
@@ -208,15 +215,14 @@ void Analyse_Data()
 		case '2': sort_row = 2;break;
 		default : if (read_char!='0') {printf("Unknown sort criteria\n");} return;
 		}
-	qsort (trace, trace_size, 5*sizeof(unsigned int), cmp);
+	qsort (trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 	printf("Sort terminated of %u data by %s of execution\n",trace_size,(sort_row==2 ? "number":"date"));
 	sprintf(filename,"Sort.dat");
-	Log_Trace(filename); // should spec sort file
-
+	Dump_Trace(filename);
 }
 
 /* ------------ Function used to get simulation mode ------------ */
-char Simulation_Mode()
+char Simulation_Mode(char Sim_mode)
 {
 	char read_char;
 	printf("Choose the simulation mode:\n");
@@ -225,6 +231,12 @@ char Simulation_Mode()
 	printf("3- Simulate LFU Cache Policy\n");
 	printf("0- Return\n");
 	do {read_char = getchar();} while((read_char!='0')  && (read_char!='1')  && (read_char!='2')  && (read_char!='3'));
+	if (read_char == '0') read_char = Sim_mode;
+	 switch(read_char) {
+		case '1': printf("Simulation mode : Qemu Basic Policy\n");break;	 	
+		case '2': printf("Simulation mode : LRU Cache Policy\n");break;
+		case '3': printf("Simulation mode : LFU Cache Policy\n");break;
+	 	}
 	return read_char;
 }
 
@@ -260,9 +272,9 @@ int main(int argc, char **argv)
 
 	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
-	printf("2 - Modify number of lines into loop\n");
-	printf("3 - Print tb trace table\n");
-	printf("4 - Change Simulated cache policy\n");
+	printf("2 - Modify number of steps into loop\n");
+	printf("3 - Change Simulated cache policy\n");	
+	printf("4 - Dump Trace Data\n");
 	printf("5 - Analyse Trace Data\n");
 	printf("0 - Exit\n");  
 
@@ -274,11 +286,16 @@ int main(int argc, char **argv)
 												 (read_char !='5'));
    switch(read_char) {
    	case '0': return;   	
-   	case '1': Run(Sim_mode, f,loop_exec); break;
-   	case '2': printf("Actual loop_exec=%d, Enter new value: ",loop_exec);scanf("%u",&loop_exec);break;
-   	case '3': if (trace_size) {sprintf(filename,"DummyTrace.dat"); Log_Trace(filename);}break;
-   	case '4': Sim_mode = Simulation_Mode();break;
-   	case '5': if (trace_size) {Analyse_Data();} break;
+   	case '1': Run(Sim_mode, f,loop_exec); 
+   					break;
+   	case '2': printf("Actual loop_exec=%d, Enter new value(0 for continuous loop) : ",loop_exec);scanf("%u",&loop_exec);
+   					break;
+   	case '3': Sim_mode = Simulation_Mode(Sim_mode);
+   					break;   	
+   	case '4': if (trace_size) {sprintf(filename,"DumpTrace.dat"); Dump_Trace(filename);} 
+   					else {printf("No trace data available!\n");} break;
+   	case '5': if (trace_size) {Analyse_Data();} 
+   					else {printf("No trace data available!\n");} break;
    	default:  break;
    	}
 	}
