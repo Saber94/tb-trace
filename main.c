@@ -63,19 +63,20 @@ void Dump_Trace(char *filename)
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  | Date | Valide\n"); 
+	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  |  Date  | Valide\n"); 
    for(i=0;i < trace_size;i++) 
    	{
    		Deviation = trace[i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d | %u\n",
    					i,
    					trace[i][ADRESS],
    					trace[i][SIZE],
    					trace[i][NB_EXEC],
    					trace[i][NB_TRANS],
    					Deviation,
-   					trace[i][LAST_EXEC]);
+   					trace[i][LAST_EXEC],
+   					trace[i][VALIDE]);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
@@ -144,7 +145,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
    		switch(line[0]) {
       case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
-					 if (((nb_tran%1000)==0) && (mode == '2')) 
+					 if (((nb_tran%CODE_GEN_MAX_BLOCKS)==0) && (mode == '2')) 
 					 	{
 					 	last_trace_size = trace_size;
 						sort_row = 4;
