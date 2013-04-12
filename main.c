@@ -17,7 +17,7 @@
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-unsigned int trace[2*CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
