@@ -10,7 +10,8 @@
 #define NB_EXEC 2
 #define NB_TRANS 3
 #define LAST_EXEC 4
-#define TRACE_ROWS 5
+#define VALIDE 5
+#define TRACE_ROWS 6
 
 char filename[16];
 unsigned int nb_exec, nb_tran, nb_flush;
@@ -24,9 +25,10 @@ int sort_row;
 /* ------------ Used to erase trace[][] ------------ */
 void Trace_Init(int start)
 {
+	int i,j;
 	trace_size = 0;
-   int i,j;
-   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)
+	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
+   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
     for(j=0;j<TRACE_ROWS;j++) 
       trace[i][j]=0;
 }
@@ -57,16 +59,23 @@ void Dump_Trace(char *filename)
    	{
    		Sum_Exec+=trace[i][NB_EXEC];
    		Sum_Trans+=trace[i][NB_TRANS];
-   	}   
+   	}
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  | Last Exec\n"); 
+	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  | Date | Valide\n"); 
    for(i=0;i < trace_size;i++) 
    	{
    		Deviation = trace[i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",i,trace[i][ADRESS],trace[i][SIZE],trace[i][NB_EXEC],trace[i][NB_TRANS],Deviation,trace[i][LAST_EXEC]);
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %5d\n",
+   					i,
+   					trace[i][ADRESS],
+   					trace[i][SIZE],
+   					trace[i][NB_EXEC],
+   					trace[i][NB_TRANS],
+   					Deviation,
+   					trace[i][LAST_EXEC]);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
@@ -152,8 +161,10 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
 					 	printf("nb_trans = %u\n",nb_tran);
 						printf("nb_flush = %u\n",nb_flush);
 	   			 	printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
-					 	ratio=(float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
+					 	ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
 					 	printf("exec ratio = %f\n",ratio);
+					 	ratio = ((float)tb_hit / (nb_exec-last_tb_exec));
+					 	printf("cache hit ratio = %f\n",ratio);
 						tb_hit = 0;
 						return;					 		
 					 		}
@@ -167,11 +178,12 @@ void Run(char mode, FILE *f,unsigned int loop_exec)
       			 trace[i][SIZE] = Read_Size;
       			 trace[i][NB_EXEC] = 0;
       			 trace[i][NB_TRANS]++;
+      			 trace[i][VALIDE] = 0;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress); 
       			 i = Lookup_tb(Read_Adress);
-					 if (i<last_trace_size) tb_hit++;
+					 if ((i<last_trace_size) && (trace[i][VALIDE])) tb_hit++;
       			 trace[i][NB_EXEC]++;
       			 trace[i][LAST_EXEC] = nb_exec;
 					 nb_exec++;
