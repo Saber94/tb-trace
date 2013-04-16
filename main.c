@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define LINE_MAX 100
 #define CODE_GEN_MAX_BLOCKS 1000
@@ -15,23 +16,14 @@
 #define TRACE_ROWS 	6
 
 char filename[16];
-unsigned int nb_exec, nb_tran, nb_flush;
-unsigned int Read_Adress,Read_Size;
-unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int nb_exec, nb_tran,local_nb_tran, nb_flush;
+uint64_t Read_Adress,Read_Size;
+uint64_t trace[2*CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
 int sort_row;
 
-/* ------------ Used to erase trace[][] ------------ */
-void Trace_Init(int start)
-{
-	int i,j;
-	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
-   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
-    for(j=0;j<TRACE_ROWS;j++) 
-      trace[i][j]=0;   
-}
 
 /* ------------ Needed for qsort() ------------ */
 int cmp ( const void *pa, const void *pb ) {
@@ -94,12 +86,31 @@ void Dump_Trace(char *filename)
    printf("Trace file recorded to %s\n",filename);
 }
 
+/* ------------ Used to erase trace[][] ------------ */
+void Trace_Init(int start)
+{
+	int i,j;
+	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
+   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
+    for(j=0;j<TRACE_ROWS;j++) 
+      trace[i][j]=0;
+	snprintf(filename, sizeof(char) * 16, "Trace_Init.dat");
+	Dump_Trace(filename);      
+}
+
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
 int Lookup_tb(unsigned int Adress)
 {  
 	unsigned int i = 0;
-	while((i<trace_size) && (trace[i][ADRESS]!=Adress)) i++;
+	while((i<trace_size) && (trace[i][ADRESS]!=Adress) && (i<CODE_GEN_MAX_BLOCKS)) i++;
 	if (Adress!=trace[i][ADRESS]) trace_size++;
+	if (i>=CODE_GEN_MAX_BLOCKS) 
+		{
+			printf("Trace index Overflow! (i=%d)\n",i);
+			snprintf(filename, sizeof(char) * 16, "Trace_Log.dat");
+			Dump_Trace(filename); 	
+			exit(EXIT_FAILURE);
+		}
 	return i;
 }
 
@@ -131,7 +142,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 		fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     	fclose(fdat);
     	if (mode == '1') Trace_Init(0);
-    	trace_size = 0;
+    	local_nb_tran = 0;
 	}
 
 	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
@@ -139,7 +150,10 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
    	if (next_line_is_adress) 
    	{
    		next_line_is_adress=0;
-   		sscanf(line,"%x",&Read_Adress);
+   		if ((sscanf(line,"%jx",&Read_Adress)==EOF) || (Read_Adress==0))
+   		{
+   			printf("Unknown Read Adress! \n");printf(line);exit(EXIT_FAILURE);
+   		}
    		printf("Translation @ 0x%x ",Read_Adress);
    		}
    	else 
@@ -147,7 +161,8 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
    		switch(line[0]) {
       case 'I': next_line_is_adress = 1;						// In asm, next line is @
 					 nb_tran++;
-					 if ( ((nb_tran%CODE_GEN_MAX_BLOCKS)==0) && ((mode == '2') || (mode == '3')) )
+					 local_nb_tran++;
+					 if ( (local_nb_tran >= CODE_GEN_MAX_BLOCKS) && ((mode == '2') || (mode == '3')) )
 					 {
 					  	if (mode == '2') 
 					  	 	{sort_row = 4; RLU_RFU = 'R';} // LRU
@@ -159,7 +174,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 						qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 						snprintf(filename, sizeof(char) * 16, "Trace_L%cU.dat",RLU_RFU);
 					   Dump_Trace(filename);
-						trace_size/=quota;																								// Quota !??
+						trace_size = CODE_GEN_MAX_BLOCKS/quota;																								// Quota !??
 						Trace_Init(trace_size);
 						printf("\nL%cU cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,tb_hit);						
 						printf("\nStat:\n");					 	
