@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <stdint.h>
 
 #define LINE_MAX 100
 #define CODE_GEN_MAX_BLOCKS 1000
@@ -17,8 +16,8 @@
 
 char filename[16];
 unsigned int nb_exec, nb_tran,local_nb_tran, nb_flush;
-uint64_t Read_Adress,Read_Size;
-uint64_t trace[2*CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int Read_Adress,Read_Size;
+unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
@@ -94,23 +93,21 @@ void Trace_Init(int start)
    for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
     for(j=0;j<TRACE_ROWS;j++) 
       trace[i][j]=0;
-	snprintf(filename, sizeof(char) * 16, "Trace_Init.dat");
-	Dump_Trace(filename);      
 }
 
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
-int Lookup_tb(unsigned int Adress)
+int Lookup_tb(unsigned int Adress, int alloc)
 {  
 	unsigned int i = 0;
 	while((i<trace_size) && (trace[i][ADRESS]!=Adress) && (i<CODE_GEN_MAX_BLOCKS)) i++;
-	if (Adress!=trace[i][ADRESS]) trace_size++;
-	if (i>=CODE_GEN_MAX_BLOCKS) 
+	if (i>CODE_GEN_MAX_BLOCKS)
 		{
-			printf("Trace index Overflow! (i=%d)\n",i);
+			printf("Trace index Overflow! (i=%d ; loc_nb_tr=%d)\n",i,local_nb_tran);
 			snprintf(filename, sizeof(char) * 16, "Trace_Log.dat");
 			Dump_Trace(filename); 	
 			exit(EXIT_FAILURE);
 		}
+	if ( (Adress!=trace[i][ADRESS]) && (alloc)) trace_size++;
 	return i;
 }
 
@@ -134,7 +131,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 		ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
 		last_tb_exec=nb_exec;
 		tb_flushed=0;
-		fdat = fopen("ratio.dat", "a");
+		fdat = fopen("exec_ratio.dat", "a");
       if (fdat == NULL) {
          printf("Couldn't open ratio file for writing.\n");
         	exit(EXIT_FAILURE);
@@ -150,31 +147,28 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
    	if (next_line_is_adress) 
    	{
    		next_line_is_adress=0;
-   		if ((sscanf(line,"%jx",&Read_Adress)==EOF) || (Read_Adress==0))
-   		{
-   			printf("Unknown Read Adress! \n");printf(line);exit(EXIT_FAILURE);
-   		}
+   		sscanf(line,"%x",&Read_Adress);
    		printf("Translation @ 0x%x ",Read_Adress);
-   		}
+   	}
    	else 
    	{
    		switch(line[0]) {
-      case 'I': next_line_is_adress = 1;						// In asm, next line is @
+      case 'I': next_line_is_adress = 1;														// In asm, next line is @
 					 nb_tran++;
 					 local_nb_tran++;
-					 if ( (local_nb_tran >= CODE_GEN_MAX_BLOCKS) && ((mode == '2') || (mode == '3')) )
+					 if ( (local_nb_tran >= (float)CODE_GEN_MAX_BLOCKS*(1-(float)1/quota)) && ((mode == '2') || (mode == '3')) )
 					 {
 					  	if (mode == '2') 
-					  	 	{sort_row = 4; RLU_RFU = 'R';} // LRU
+					  	 	{sort_row = 4; RLU_RFU = 'R';} 										// LRU
 					 	else 
-					 	 	{sort_row = 2; RLU_RFU = 'F';} // mode == 3 : LFU
+					 	 	{sort_row = 2; RLU_RFU = 'F';} 										// mode == 3 : LFU
 					 	last_trace_size = trace_size;
 						nb_flush++;
 						tb_flushed = 1;						
 						qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 						snprintf(filename, sizeof(char) * 16, "Trace_L%cU.dat",RLU_RFU);
 					   Dump_Trace(filename);
-						trace_size = CODE_GEN_MAX_BLOCKS/quota;																								// Quota !??
+						trace_size = CODE_GEN_MAX_BLOCKS/quota;								// Quota !??
 						Trace_Init(trace_size);
 						printf("\nL%cU cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,tb_hit);						
 						printf("\nStat:\n");					 	
@@ -186,14 +180,21 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					 	printf("exec/trans ratio         = %f\n",ratio);
 					 	ratio = ((float)tb_hit / (nb_exec-last_tb_exec));
 					 	printf("cache_hit/nb_exec ratio  = %f\n",ratio);
+						fdat = fopen("hit_ratio.dat", "a");
+      					if (fdat == NULL) {
+         					printf("Couldn't open ratio file for writing.\n");
+        						exit(EXIT_FAILURE);
+      						}
+						fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+    					fclose(fdat);
 						tb_hit = 0;
 						return;
 					}	 		
 					 		
 					break;
-      case 'O': sscanf(line+11,"%u",&Read_Size);			// Out asm [size=%]
+      case 'O': sscanf(line+11,"%u",&Read_Size);											// Out asm [size=%]
       			 printf("[size = %3u]\n",Read_Size);
-					 i = Lookup_tb(Read_Adress);
+					 i = Lookup_tb(Read_Adress,1);
 					 //if ((trace[i][SIZE]!=0) && (trace[i][SIZE]!=Read_Size))
 					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][SIZE]);}
       			 trace[i][ADRESS] = Read_Adress;
@@ -202,16 +203,16 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
       			 trace[i][NB_TRANS]++;
       			 trace[i][VALIDE] = 0;
       			break;
-      case 'T': sscanf(line+22,"%x",&Read_Adress);				// Trace 
+      case 'T': sscanf(line+22,"%x",&Read_Adress);											// Trace 
       			 printf("Execution   @ 0x%x\n",Read_Adress);
-      			 i = Lookup_tb(Read_Adress);
+      			 i = Lookup_tb(Read_Adress,0);
 					 if ((i<last_trace_size) && (trace[i][VALIDE])) tb_hit++;
       			 trace[i][NB_EXEC]++;
       			 trace[i][LAST_EXEC] = nb_exec;
 					 nb_exec++;
 					break;     
-		case 'F': if (mode == '1') 			// Qemu basic cache policy
-					{printf(line); 										// tb_flush >> must return 
+		case 'F': if (mode == '1') 																// Qemu basic cache policy
+					{printf(line); 																	// tb_flush >> must return 
    				 snprintf(filename, sizeof(char) * 16, "Trace_%u.dat", nb_flush);
 					 Dump_Trace(filename);
 					 nb_flush++;
@@ -296,9 +297,10 @@ int main(int argc, char **argv)
         return -1;
     }
     
-   Trace_Init(0); 
-   if (remove("ratio.dat") == -1)
-   	perror("Error in deleting a file"); 
+   Trace_Init(0);
+   
+   remove("exec_ratio.dat");
+   remove("hit_ratio.dat");
 
 	system( "clear" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
