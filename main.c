@@ -83,7 +83,7 @@ void Dump_Trace(char *filename)
    				 Variance, 
    				 nb_pos_dev);
    fclose(f_trace);
-   printf("Trace file recorded to %s\n",filename);
+   printf("\nTrace file recorded to %s\n",filename);
 }
 
 /* ------------ Used to erase trace[][] ------------ */
@@ -150,7 +150,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
    	{
    		next_line_is_adress=0;
    		sscanf(line,"%x",&Read_Adress);
-   		printf("Translation @ 0x%x ",Read_Adress);
+   		printf("\rTranslation @ 0x%010x",Read_Adress);
    	}
    	else 
    	{
@@ -195,7 +195,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					 		
 					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);											// Out asm [size=%]
-      			 printf("[size = %3u]\n",Read_Size);
+      			 //printf("[size = %5u]",Read_Size);
 					 i = Lookup_tb(Read_Adress,1);
 					 //if ((trace[i][SIZE]!=0) && (trace[i][SIZE]!=Read_Size))
 					 //  {printf("Warning: Attemp to overwrite bloc @ 0x%x (Index = %u ; Size = %u) \n",Read_Adress,i,trace[i][SIZE]);}
@@ -206,7 +206,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
       			 trace[i][VALIDE] = 0;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);											// Trace 
-      			 printf("Execution   @ 0x%x\n",Read_Adress);
+      			 printf("\rExecution   @ 0x%010x",Read_Adress);
       			 i = Lookup_tb(Read_Adress,0);
 					 if ((i<last_trace_size) && (trace[i][VALIDE])) tb_hit++;
       			 trace[i][NB_EXEC]++;
