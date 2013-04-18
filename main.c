@@ -21,6 +21,7 @@ unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
+unsigned int nb_max_tb;
 int sort_row;
 
 
@@ -90,7 +91,7 @@ void Trace_Init(int start)
 {
 	int i,j;
 	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
-   for(i=start;i<CODE_GEN_MAX_BLOCKS;i++)			// flush all remaining trace data
+   for(i=start;i<nb_max_tb;i++)			// flush all remaining trace data
     for(j=0;j<TRACE_ROWS;j++) 
       trace[i][j]=0;
 }
@@ -99,8 +100,8 @@ void Trace_Init(int start)
 int Lookup_tb(unsigned int Adress, int alloc)
 {  
 	unsigned int i = 0;
-	while((i<trace_size) && (trace[i][ADRESS]!=Adress) && (i<CODE_GEN_MAX_BLOCKS)) i++;
-	if (i>CODE_GEN_MAX_BLOCKS)
+	while((i<trace_size) && (trace[i][ADRESS]!=Adress) && (i<nb_max_tb)) i++;
+	if (i>nb_max_tb)
 		{
 			printf("Trace index Overflow! (i=%d ; loc_nb_tr=%d)\n",i,local_nb_tran);
 			snprintf(filename, sizeof(char) * 16, "Trace_Log.dat");
@@ -128,7 +129,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 
 	if (tb_flushed) 
 	{
-		ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
+		ratio = (float)(nb_exec-last_tb_exec)/nb_max_tb;
 		last_tb_exec=nb_exec;
 		tb_flushed=0;
 		fdat = fopen("exec_ratio.dat", "a");
@@ -142,8 +143,9 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
     	local_nb_tran = 0;
 	}
 
-	while ((fgets(line,LINE_MAX,f)!= NULL) && ((nb_lines < loop_exec) || !loop_exec))
+	while ((nb_lines < loop_exec) || !loop_exec)
    {
+   	if (fgets(line,LINE_MAX,f)==NULL) {printf("End of trace file, Exiting... \n");exit(EXIT_SUCCESS);}
    	if (next_line_is_adress) 
    	{
    		next_line_is_adress=0;
@@ -156,7 +158,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
       case 'I': next_line_is_adress = 1;														// In asm, next line is @
 					 nb_tran++;
 					 local_nb_tran++;
-					 if ( (local_nb_tran >= (float)CODE_GEN_MAX_BLOCKS*(1-(float)1/quota)) && ((mode == '2') || (mode == '3')) )
+					 if ( (local_nb_tran >= (float)nb_max_tb*(1-(float)1/quota)) && ((mode == '2') || (mode == '3')) )
 					 {
 					  	if (mode == '2') 
 					  	 	{sort_row = 4; RLU_RFU = 'R';} 										// LRU
@@ -168,7 +170,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 						qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 						snprintf(filename, sizeof(char) * 16, "Trace_L%cU.dat",RLU_RFU);
 					   Dump_Trace(filename);
-						trace_size = CODE_GEN_MAX_BLOCKS/quota;								// Quota !??
+						trace_size = nb_max_tb/quota;								// Quota !??
 						Trace_Init(trace_size);
 						printf("\nL%cU cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,tb_hit);						
 						printf("\nStat:\n");					 	
@@ -176,7 +178,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					 	printf("nb_trans                 = %u\n",nb_tran);
 						printf("nb_flush                 = %u\n",nb_flush);
 	   			 	printf("exec since last flush    = %u\n",nb_exec-last_tb_exec);
-					 	ratio = (float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
+					 	ratio = (float)(nb_exec-last_tb_exec)/nb_max_tb;
 					 	printf("exec/trans ratio         = %f\n",ratio);
 					 	ratio = ((float)tb_hit / (nb_exec-last_tb_exec));
 					 	printf("cache_hit/nb_exec ratio  = %f\n",ratio);
@@ -222,7 +224,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					 printf("nb_trans = %u\n",nb_tran);
 					 printf("nb_flush = %u\n",nb_flush);
 	   			 printf("exec since last flush = %u\n",nb_exec-last_tb_exec);
-					 ratio=(float)(nb_exec-last_tb_exec)/CODE_GEN_MAX_BLOCKS;
+					 ratio=(float)(nb_exec-last_tb_exec)/nb_max_tb;
 					 printf("exec ratio = %f\n",ratio);	
 					return;
 					} 
@@ -298,6 +300,7 @@ int main(int argc, char **argv)
     }
     
    Trace_Init(0);
+   nb_max_tb = CODE_GEN_MAX_BLOCKS;
    
    remove("exec_ratio.dat");
    remove("hit_ratio.dat");
@@ -310,10 +313,11 @@ int main(int argc, char **argv)
 	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of steps into loop\n");
-	printf("3 - Modify Quota of simulated cache policy\n");	
-	printf("4 - Change Simulated cache policy\n");	
-	printf("5 - Dump Trace Data\n");
-	printf("6 - Analyse Trace Data\n");
+	printf("3 - Modify Quota of simulated cache policy\n");
+	printf("4 - Modify Trace Size\n");
+	printf("5 - Change Simulated cache policy\n");	
+	printf("6 - Dump Trace Data\n");
+	printf("7 - Analyse Trace Data\n");
 	printf("0 - Exit\n");  
 
 	do {read_char = getchar();} while((read_char !='0') && 
@@ -330,11 +334,13 @@ int main(int argc, char **argv)
    					break;
    	case '3': do {printf("Actual Quota=1/%d, Enter new value : 1/",quota);scanf("%d",&quota);} while(quota < 1);
    					break;
-   	case '4': Sim_mode = Simulation_Mode(Sim_mode);
+   	case '4': do {printf("Actual Trace size = %d, Enter new value : ",nb_max_tb);scanf("%d",&nb_max_tb);} while((nb_max_tb>1000) || (nb_max_tb<10));
+   					break;			
+   	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    					break;
-   	case '5': if (trace_size) {sprintf(filename,"DumpTrace.dat"); Dump_Trace(filename);} 
+   	case '6': if (trace_size) {sprintf(filename,"DumpTrace.dat"); Dump_Trace(filename);} 
    					else {printf("No trace data available!\n");} break;
-   	case '6': if (trace_size) {Analyse_Data();}
+   	case '7': if (trace_size) {Analyse_Data();}
    					else {printf("No trace data available!\n");} break;
    	default:  break;
    	}
