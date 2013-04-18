@@ -17,7 +17,7 @@
 char filename[16];
 unsigned int nb_exec, nb_tran,local_nb_tran, nb_flush;
 unsigned int Read_Adress,Read_Size;
-unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int trace[CODE_GEN_MAX_BLOCKS+1][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
 unsigned int tb_hit = 0;
@@ -252,7 +252,7 @@ void Analyse_Data()
 		case '2': sort_row = 2;break;
 		default : if (read_char!='0') {printf("Unknown sort criteria\n");} return;
 		}
-	qsort (trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+	qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 	printf("Sort terminated of %u data by %s of execution\n",trace_size,(sort_row==2 ? "number":"date"));
 	sprintf(filename,"Sort.dat");
 	Dump_Trace(filename);
