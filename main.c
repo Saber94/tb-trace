@@ -145,7 +145,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 
 	while ((nb_lines < loop_exec) || !loop_exec)
    {
-   	if (fgets(line,LINE_MAX,f)==NULL) {printf("End of trace file, Exiting... \n");exit(EXIT_SUCCESS);}
+   	if (fgets(line,LINE_MAX,f)==NULL) {printf("\nEnd of trace file, Exiting... \n");exit(EXIT_SUCCESS);}
    	if (next_line_is_adress) 
    	{
    		next_line_is_adress=0;
@@ -178,7 +178,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					 	printf("nb_trans                 = %u\n",nb_tran);
 						printf("nb_flush                 = %u\n",nb_flush);
 	   			 	printf("exec since last flush    = %u\n",nb_exec-last_tb_exec);
-					 	ratio = (float)(nb_exec-last_tb_exec)/nb_max_tb;
+					 	ratio = (float)(nb_exec-last_tb_exec)/(nb_max_tb-(float)nb_max_tb/quota);
 					 	printf("exec/trans ratio         = %f\n",ratio);
 					 	ratio = ((float)tb_hit / (nb_exec-last_tb_exec));
 					 	printf("cache_hit/nb_exec ratio  = %f\n",ratio);
