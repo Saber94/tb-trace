@@ -318,6 +318,7 @@ int main(int argc, char **argv)
 	printf("5 - Change Simulated cache policy\n");	
 	printf("6 - Dump Trace Data\n");
 	printf("7 - Analyse Trace Data\n");
+	printf("8 - plot hit ratio\n");	
 	printf("0 - Exit\n");  
 
 	do {read_char = getchar();} while((read_char !='0') && 
@@ -325,7 +326,10 @@ int main(int argc, char **argv)
 												 (read_char !='2') && 
 												 (read_char !='3') && 
 												 (read_char !='4') && 
-												 (read_char !='5'));
+												 (read_char !='5') && 
+												 (read_char !='6') && 
+												 (read_char !='7') && 
+												 (read_char !='8'));
    switch(read_char) {
    	case '0': return;   	// exit program
    	case '1': Run(Sim_mode, f,loop_exec,quota); 
@@ -342,6 +346,8 @@ int main(int argc, char **argv)
    					else {printf("No trace data available!\n");} break;
    	case '7': if (trace_size) {Analyse_Data();}
    					else {printf("No trace data available!\n");} break;
+   	case '8': system("gnuplot script_hit.plt");
+   					break;	
    	default:  break;
    	}
 	}
