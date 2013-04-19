@@ -20,7 +20,7 @@ unsigned int Read_Adress,Read_Size;
 unsigned int trace[CODE_GEN_MAX_BLOCKS+1][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int last_trace_size = 0;
-unsigned int tb_hit = 0;
+unsigned int tb_hit = 0, global_tb_hit = 0;
 unsigned int nb_max_tb;
 int sort_row;
 
@@ -189,7 +189,11 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
       						}
 						fprintf(fdat, "%d, %f\n", nb_flush, ratio);
     					fclose(fdat);
+    					global_tb_hit+=tb_hit;
+    					printf("Total cache_hit          = %u\n",global_tb_hit);
 						tb_hit = 0;
+						ratio = ((float)global_tb_hit/nb_exec);
+					 	printf("Global cache_hit ratio   = %f\n",ratio);
 						return;
 					}	 		
 					 		
