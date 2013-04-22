@@ -105,7 +105,7 @@ int Lookup_tb(unsigned int Adress, int alloc)
 		{
 			printf("Trace index Overflow! (i=%d ; loc_nb_tr=%d)\n",i,local_nb_tran);
 			snprintf(filename, sizeof(char) * 16, "Trace_Log.dat");
-			Dump_Trace(filename); 	
+			Dump_Trace(filename);
 			exit(EXIT_FAILURE);
 		}
 	if ( (Adress!=trace[i][ADRESS]) && (alloc)) trace_size++;
@@ -195,8 +195,8 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 						ratio = ((float)global_tb_hit/nb_exec);
 					 	printf("Global cache_hit ratio   = %f\n",ratio);
 						return;
-					}	 		
-					 		
+					}
+
 					break;
       case 'O': sscanf(line+11,"%u",&Read_Size);											// Out asm [size=%]
       			 //printf("[size = %5u]",Read_Size);
@@ -233,7 +233,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					return;
 					} 
 		//case 'm': printf(line);  										// modifying code
-	
+
       	}
      	}
 	nb_lines++;   
@@ -295,17 +295,17 @@ int main(int argc, char **argv)
 		return -1; 
 	}
 
-		
+
    f=fopen(&argv[1][0],"r");
    if(f == NULL)
     {
         printf("specified file not found! Exiting...\n");
         return -1;
     }
-    
+
    Trace_Init(0);
    nb_max_tb = CODE_GEN_MAX_BLOCKS;
-   
+
    remove("exec_ratio.dat");
    remove("hit_ratio.dat");
 
@@ -350,8 +350,9 @@ int main(int argc, char **argv)
    					else {printf("No trace data available!\n");} break;
    	case '7': if (trace_size) {Analyse_Data();}
    					else {printf("No trace data available!\n");} break;
-   	case '8': system("gnuplot script_hit.plt");
-   					break;	
+   	case '8': if (!system("gnuplot script_hit.plt")) printf("\nPlot recorded to hit_out.png"); 
+   				 else printf("\nPlot error, verify that source file (hit_ratio.dat) is available");
+   				 break;	
    	default:  break;
    	}
 	}
