@@ -119,7 +119,6 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 	FILE *fdat;
 	int i;
 	int next_line_is_adress=0;
-	int nb_lines=0;
 	static unsigned int last_tb_exec;
 	static int tb_flushed =0;
    char line[LINE_MAX];
@@ -137,14 +136,15 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
          printf("Couldn't open ratio file for writing.\n");
         	exit(EXIT_FAILURE);
       	}
-		fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+		fprintf(fdat, "%d, %f\n", nb_exec, ratio);
     	fclose(fdat);
     	if (mode == '1') Trace_Init(0);
     	local_nb_tran = 0;
 	}
 
-	while ((nb_lines < loop_exec) || !loop_exec)
+	while (1)
    {
+   	if ((nb_exec > loop_exec) && loop_exec) {printf("\nEnd of %d executions, please modify loop_exec to continue...\n",nb_exec);return;}
    	if (fgets(line,LINE_MAX,f)==NULL) {printf("\nEnd of trace file, Exiting... \n");exit(EXIT_SUCCESS);}
    	if (next_line_is_adress) 
    	{
@@ -172,7 +172,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 					   Dump_Trace(filename);
 						trace_size = nb_max_tb/quota;								// Quota !??
 						Trace_Init(trace_size);
-						printf("\nL%cU cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,tb_hit);						
+						printf("\nL%cU (Quota=1/%d)cache policy flush here!\nCache hit since last flush = %u\n",RLU_RFU,quota,tb_hit);						
 						printf("\nStat:\n");					 	
 					 	printf("nb_exec                  = %u\n",nb_exec);
 					 	printf("nb_trans                 = %u\n",nb_tran);
@@ -187,7 +187,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
          					printf("Couldn't open ratio file for writing.\n");
         						exit(EXIT_FAILURE);
       						}
-						fprintf(fdat, "%d, %f\n", nb_flush, ratio);
+						fprintf(fdat, "%d, %f\n", nb_exec, ratio);
     					fclose(fdat);
     					global_tb_hit+=tb_hit;
     					printf("Total cache_hit          = %u\n",global_tb_hit);
@@ -236,7 +236,7 @@ void Run(char mode, FILE *f,unsigned int loop_exec, int quota)
 
       	}
      	}
-	nb_lines++;   
+     	
    }
 
 }
@@ -284,7 +284,7 @@ char Simulation_Mode(char Sim_mode)
 /* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
-	unsigned int loop_exec;
+	unsigned int loop_exec = 500000;
 	int quota = 5;
 	FILE *f;
 	char read_char;
@@ -316,29 +316,31 @@ int main(int argc, char **argv)
 
 	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
-	printf("2 - Modify number of steps into loop\n");
+	printf("2 - Modify number of executions into loop\n");
 	printf("3 - Modify Quota of simulated cache policy\n");
 	printf("4 - Modify Trace Size\n");
 	printf("5 - Change Simulated cache policy\n");	
 	printf("6 - Dump Trace Data\n");
 	printf("7 - Analyse Trace Data\n");
-	printf("8 - plot hit ratio\n");	
+	printf("8 - Plot hit ratio\n");
+	printf("9 - Restart simulation\n");
 	printf("0 - Exit\n");  
 
-	do {read_char = getchar();} while((read_char !='0') && 
-												 (read_char !='1') && 
+	do {read_char = getchar();} while((read_char !='1') && 
 												 (read_char !='2') && 
 												 (read_char !='3') && 
 												 (read_char !='4') && 
 												 (read_char !='5') && 
 												 (read_char !='6') && 
-												 (read_char !='7') && 
-												 (read_char !='8'));
+												 (read_char !='7') &&
+												 (read_char !='8') && 
+												 (read_char !='9') &&
+												 (read_char !='0'));
    switch(read_char) {
    	case '0': return;   	// exit program
    	case '1': Run(Sim_mode, f,loop_exec,quota); 
    					break;
-   	case '2': printf("Actual loop_exec=%d, Enter new value(0 for continuous loop) : ",loop_exec);scanf("%u",&loop_exec);
+   	case '2': printf("Actual number of translations is %d, Enter new value (0 for continuous loop) : ",loop_exec);scanf("%u",&loop_exec);
    					break;
    	case '3': do {printf("Actual Quota=1/%d, Enter new value : 1/",quota);scanf("%d",&quota);} while(quota < 1);
    					break;
@@ -352,7 +354,19 @@ int main(int argc, char **argv)
    					else {printf("No trace data available!\n");} break;
    	case '8': if (!system("gnuplot script_hit.plt")) printf("\nPlot recorded to hit_out.png"); 
    				 else printf("\nPlot error, verify that source file (hit_ratio.dat) is available");
-   				 break;	
+   				 break;
+   	case '9': remove("exec_ratio.dat");
+   			    remove("hit_ratio.dat");
+   			    system( "clear" );
+   			    nb_exec =0;
+   			    nb_tran = 0;
+   			    local_nb_tran = 0;
+   			    nb_flush = 0;
+   			    global_tb_hit = 0;
+   			    trace_size = 0;
+   			    last_trace_size = 0;
+   			    rewind(f); 
+   			    break;
    	default:  break;
    	}
 	}
