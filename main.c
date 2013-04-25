@@ -23,8 +23,9 @@ unsigned int nb_flush;
 unsigned int Read_Adress,Read_Size;
 unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
-unsigned int tb_hit = 0, global_tb_hit = 0;
-unsigned int nb_max_tb;
+unsigned int trace_size_max;
+unsigned int tb_hit = 0;
+unsigned int global_tb_hit = 0;
 unsigned int last_nb_exec;
 unsigned int last_nb_tran;
 int tb_flushed = 0;
@@ -64,12 +65,12 @@ void Dump_Trace(char *filename)
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |  Dev  |  Date  | Valide\n"); 
+	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |   Dev   |  Date  | Valide\n"); 
    for(i=0;i < trace_size;i++) 
    	{
    		Deviation = trace[i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+5d | %6d | %u\n",
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+7d | %6d | %u\n",
    					i,
    					trace[i][ADRESS],
    					trace[i][SIZE],
@@ -82,7 +83,7 @@ void Dump_Trace(char *filename)
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
    
-   fprintf(f_trace,"\n-------------------------------------------------------\n");
+   fprintf(f_trace,"\n-----------------------------------------------------------\n");
    
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
@@ -99,10 +100,15 @@ void Dump_Trace(char *filename)
 void Trace_Init(int start)
 {
 	int i,j;
-	for (i=0;i<start;i++) trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
-   for(i=start;i<nb_max_tb;i++)			// flush all remaining trace data
-    for(j=0;j<TRACE_ROWS;j++) 
-      trace[i][j]=0;
+	for (i=0;i<start;i++) 
+	 {
+	 	trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
+	 }
+   for(i=start;i<trace_size_max;i++)			// flush all remaining trace data
+    {
+    	for(j=0;j<TRACE_ROWS;j++) 
+       {trace[i][j]=0;}
+    }
 }
 
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
@@ -111,15 +117,17 @@ int Lookup_tb(unsigned int Adress)
 	unsigned int i = 0;
 	while((i<trace_size) && (trace[i][ADRESS]!=Adress))
 	 { i++;	
-		if (i>nb_max_tb)
+		if (i>trace_size_max-1)
 		{
 			return -1;
 		}
 	 }
-	if (trace[i][ADRESS] == 0)
+	if ((trace[i][ADRESS] == 0) && (trace_size < trace_size_max-1))
 		{
 		   trace_size++;
 			trace[i][ADRESS] = Read_Adress;
+			if ((i >= trace_size_max )|| (trace_size >= trace_size_max)) 
+			{printf("\n i = %d ; trace_size = %d",i,trace_size);exit(EXIT_FAILURE);}
 		}
 	return i;
 }
@@ -131,26 +139,22 @@ void flush(int quota)
    float ratio;
    char R_F = '_';
 	char L_M = '_';
-	if (Sim_mode!='1')
-	{
-		switch(Sim_mode) 
-		{
-			case '2':  sort_row = 4; L_M = 'L';	R_F = 'R'; break;
-			case '3':  sort_row = 2; L_M = 'L';	R_F = 'F'; break;
-			case '4':  sort_row = 4; L_M = 'M';	R_F = 'R'; break;
-			case '5':  sort_row = 2; L_M = 'M';	R_F = 'F'; break;
-		}
-		snprintf(filename, sizeof(char) * F_LENGTH, "Trace_%c%cU.dat",L_M ,R_F);
-		Dump_Trace(filename);
-	}
+	switch(Sim_mode)
+	 {
+		case '2':  sort_row = 4; L_M = 'L';	R_F = 'R'; break;
+		case '3':  sort_row = 2; L_M = 'L';	R_F = 'F'; break;
+		case '4':  sort_row = 4; L_M = 'M';	R_F = 'R'; break;
+		case '5':  sort_row = 2; L_M = 'M';	R_F = 'F'; break;
+	 }
    nb_flush++;
 	tb_flushed = 1;
 	local_nb_tran = nb_tran - last_nb_tran;
 	local_nb_exec = nb_exec - last_nb_exec;
 	snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
+
 	Dump_Trace(filename);
 	qsort(trace, trace_size, TRACE_ROWS * sizeof(unsigned int), cmp);
-	trace_size = (nb_max_tb * quota)/32;
+	trace_size = (trace_size_max * quota)/32;
 	Trace_Init(trace_size);
 	printf("\n%c%cU (Quota=%d/32)cache policy flush here!",L_M, R_F,quota);
 	printf("\n ------------- Local Stat -------------\n");
@@ -195,7 +199,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
 
 	if (tb_flushed)
 	{
-		ratio = (float)local_nb_exec/nb_max_tb;
+		ratio = (float)local_nb_exec/trace_size_max;
 		tb_flushed = 0;
 		fdat = fopen("exec_ratio.dat", "a");
       if (fdat == NULL) {
@@ -346,8 +350,8 @@ int main(int argc, char **argv)
     }
 
    Trace_Init(0);
-   nb_max_tb = CODE_GEN_MAX_BLOCKS;
-   threshold = nb_max_tb - (nb_max_tb*quota)/32;
+   trace_size_max = CODE_GEN_MAX_BLOCKS;
+   threshold = trace_size_max - (trace_size_max*quota)/32;
 
    remove("exec_ratio.dat");
    remove("hit_ratio.dat");
@@ -379,15 +383,15 @@ int main(int argc, char **argv)
    				 break;
    	case '3': do {printf("Actual Quota=%d/32, Enter new value : ",quota);
    					  scanf("%d/32",&quota);
-   					  threshold = nb_max_tb - (nb_max_tb*quota)/32; } 	while((quota != 1) && 
+   					  threshold = trace_size_max - (trace_size_max*quota)/32; } 	while((quota != 1) && 
    																							 	(quota != 2) &&
    																								(quota != 4) &&
    																								(quota != 8) &&
    																								(quota != 16));
    				 break;
-   	case '4': do {printf("Actual Trace size = %d, Enter new value : ",nb_max_tb);
-   					  scanf("%d",&nb_max_tb);
-   					  threshold = nb_max_tb - (nb_max_tb*quota)/32;} while((nb_max_tb>1024) || (nb_max_tb%16));
+   	case '4': do {printf("Actual Trace size = %d, Enter new value : ",trace_size_max);
+   					  scanf("%d",&trace_size_max);
+   					  threshold = trace_size_max - (trace_size_max*quota)/32;} while((trace_size_max>1024) || (trace_size_max%16));
    				 break;			
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;
