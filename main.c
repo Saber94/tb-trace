@@ -12,7 +12,11 @@
 #define NB_TRANS 		3
 #define LAST_EXEC 	4
 #define VALIDE 		5
-#define TRACE_ROWS 	6
+#define SECOND_CH 	6
+#define TRACE_ROWS 	7
+
+#define COLD 			0
+#define HOT				1
 
 char filename[F_LENGTH];
 unsigned int nb_exec;
@@ -21,7 +25,7 @@ unsigned int nb_tran;
 unsigned int local_nb_tran;
 unsigned int nb_flush;
 unsigned int Read_Adress,Read_Size;
-unsigned int trace[CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int trace_size;
 unsigned int trace_size_max;
 unsigned int tb_hit = 0;
@@ -44,7 +48,7 @@ int cmp ( const void *pa, const void *pb ) {
     return 0;
 }
 
-/* ------------ Dump actual trace[][] content into file ------------ */	
+/* ------------ Dump actual trace[COLD][][] content into file ------------ */	
 void Dump_Trace(char *filename)
 {
 	FILE *f_trace;
@@ -59,8 +63,8 @@ void Dump_Trace(char *filename)
       		}
 	for(i=0;i < trace_size;i++) 
    	{
-   		Sum_Exec += trace[i][NB_EXEC];
-   		Sum_Trans += trace[i][NB_TRANS];
+   		Sum_Exec += trace[COLD][i][NB_EXEC];
+   		Sum_Trans += trace[COLD][i][NB_TRANS];
    	}
    Esperance = (trace_size>0?Sum_Exec/trace_size:0);
    Variance = 0;
@@ -68,22 +72,22 @@ void Dump_Trace(char *filename)
 	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |   Dev   |  Date  | Valide\n"); 
    for(i=0;i < trace_size;i++) 
    	{
-   		Deviation = trace[i][NB_EXEC] - Esperance;
+   		Deviation = trace[COLD][i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+7d | %6d | %u\n",
+   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+7d | %6d |   %u\n",
    					i,
-   					trace[i][ADRESS],
-   					trace[i][SIZE],
-   					trace[i][NB_EXEC],
-   					trace[i][NB_TRANS],
+   					trace[COLD][i][ADRESS],
+   					trace[COLD][i][SIZE],
+   					trace[COLD][i][NB_EXEC],
+   					trace[COLD][i][NB_TRANS],
    					Deviation,
-   					trace[i][LAST_EXEC],
-   					trace[i][VALIDE]);
+   					trace[COLD][i][LAST_EXEC],
+   					trace[COLD][i][VALIDE]);
    		Variance += (Deviation * Deviation);
    	}
    Variance = (trace_size > 0 ? Variance / trace_size : 0);
    
-   fprintf(f_trace,"\n-----------------------------------------------------------\n");
+   fprintf(f_trace,"\n----------------------------------------------------------------\n");
    
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
@@ -96,18 +100,18 @@ void Dump_Trace(char *filename)
    printf("\nTrace file recorded to %s\n",filename);
 }
 
-/* ------------ Used to erase trace[][] ------------ */
+/* ------------ Used to erase trace[][][] ------------ */
 void Trace_Init(int start)
 {
 	int i,j;
 	for (i=0;i<start;i++) 
 	 {
-	 	trace[i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
+	 	trace[COLD][i][VALIDE] = 1;  // tb not flushed are valid (until retranslation)
 	 }
    for(i=start;i<trace_size_max;i++)			// flush all remaining trace data
     {
     	for(j=0;j<TRACE_ROWS;j++) 
-       {trace[i][j]=0;}
+       {trace[COLD][i][j]=0;}
     }
 }
 
@@ -115,18 +119,18 @@ void Trace_Init(int start)
 int Lookup_tb(unsigned int Adress)
 {
 	unsigned int i = 0;
-	while((i<trace_size) && (trace[i][ADRESS]!=Adress))
-	 { i++;	
+	while((i<trace_size) && (trace[COLD][i][ADRESS]!=Adress))
+	 { i++;
 		if (i>trace_size_max-1)
 		{
 			return -1;
 		}
 	 }
-	if ((trace[i][ADRESS] == 0) && (trace_size < trace_size_max-1))
+	if ((trace[COLD][i][ADRESS] == 0) && (trace_size < trace_size_max-1))
 		{
 		   trace_size++;
-			trace[i][ADRESS] = Read_Adress;
-			if ((i >= trace_size_max )|| (trace_size >= trace_size_max)) 
+			trace[COLD][i][ADRESS] = Read_Adress;
+			if ((i >= trace_size_max ) || (trace_size >= trace_size_max))
 			{printf("\n i = %d ; trace_size = %d",i,trace_size);exit(EXIT_FAILURE);}
 		}
 	return i;
@@ -213,8 +217,9 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
 
 	while (1)
    {
-   	if (fgets(line,LINE_MAX,f)==NULL) 
-   		{printf("\nEnd of trace file, Exiting... \n");
+   	if (fgets(line,LINE_MAX,f)==NULL)
+   		{system("gnuplot script_hit.plt");
+   		printf("\nEnd of trace file, Exiting... \n");
    		exit(EXIT_SUCCESS);
    		}
    	if ((nb_exec > max_exec) && max_exec) 
@@ -243,10 +248,10 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
 					 	 printf("\ncache overflow..\n");
 						 exit(EXIT_FAILURE);
 						}
-      			 trace[i][SIZE] = Read_Size;
-      			 trace[i][NB_EXEC] = 0;
-      			 trace[i][NB_TRANS]++;
-      			 trace[i][VALIDE] = 0;
+      			 trace[COLD][i][SIZE] = Read_Size;
+      			 trace[COLD][i][NB_EXEC] = 0;
+      			 trace[COLD][i][NB_TRANS]++;
+      			 trace[COLD][i][VALIDE] = 0;
       			break;
       case 'T': sscanf(line+22,"%x",&Read_Adress);											// Trace 
       			 printf("\rExecution   @ 0x%010x",Read_Adress);
@@ -256,20 +261,20 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
       			   flush(quota);
       			   system("sleep 3");
       			   i = Lookup_tb(Read_Adress);
-      			   if (trace[i][ADRESS] == 0)
+      			   if (trace[COLD][i][ADRESS] == 0)
       			    {nb_tran++;
-      			    trace[i][ADRESS] = Read_Adress;
-      			    trace[i][NB_EXEC] = 0;
-      			 	 trace[i][NB_TRANS]++;
-      			 	 trace[i][VALIDE] = 0;
+      			    trace[COLD][i][ADRESS] = Read_Adress;
+      			    trace[COLD][i][NB_EXEC] = 0;
+      			 	 trace[COLD][i][NB_TRANS]++;
+      			 	 trace[COLD][i][VALIDE] = 0;
       			 	 }
       			  }
-					 if (trace[i][VALIDE])
+					 if (trace[COLD][i][VALIDE])
 					 	{
 					 		tb_hit++;
 					 	}
-      			 trace[i][NB_EXEC]++;
-      			 trace[i][LAST_EXEC] = nb_exec;
+      			 trace[COLD][i][NB_EXEC]++;
+      			 trace[COLD][i][LAST_EXEC] = nb_exec;
 					 nb_exec++;
 					break;     
 		case 'F': if (Sim_mode == '1') 															// Qemu basic cache policy
@@ -355,6 +360,7 @@ int main(int argc, char **argv)
 
    remove("exec_ratio.dat");
    remove("hit_ratio.dat");
+   system("rm ./trace/*.dat");
 
 	system( "clear" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
@@ -371,7 +377,7 @@ int main(int argc, char **argv)
 	printf("7 - Analyse Trace Data\n");
 	printf("8 - Plot hit ratio\n");
 	printf("9 - Restart simulation\n");
-	printf("0 - Exit\n");  
+	printf("0 - Exit\n");
 
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'9'));
    switch(read_char) {
@@ -383,15 +389,12 @@ int main(int argc, char **argv)
    				 break;
    	case '3': do {printf("Actual Quota=%d/32, Enter new value : ",quota);
    					  scanf("%d/32",&quota);
-   					  threshold = trace_size_max - (trace_size_max*quota)/32; } 	while((quota != 1) && 
-   																							 	(quota != 2) &&
-   																								(quota != 4) &&
-   																								(quota != 8) &&
-   																								(quota != 16));
+   					  threshold = trace_size_max - (trace_size_max*quota)/32; 
+   					  } while((quota < 1) || (quota > 16));
    				 break;
    	case '4': do {printf("Actual Trace size = %d, Enter new value : ",trace_size_max);
    					  scanf("%d",&trace_size_max);
-   					  threshold = trace_size_max - (trace_size_max*quota)/32;} while((trace_size_max>1024) || (trace_size_max%16));
+   					  threshold = trace_size_max - (trace_size_max*quota)/32;} while((trace_size_max>1024) || (trace_size_max%32));
    				 break;			
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;
