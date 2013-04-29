@@ -21,8 +21,8 @@ char Sim_mode = BASIC_MODE;
 
 /* ------------ Needed for qsort() ------------ */
 int cmp ( const void *pa, const void *pb ) {
-    const int (*a)[TRACE_ROWS] = pa;
-    const int (*b)[TRACE_ROWS] = pb;
+    const int (*a)[TRACE_ROWS-1] = pa;
+    const int (*b)[TRACE_ROWS-1] = pb;
     if ( (*a)[sort_row] < (*b)[sort_row] ) return +1;
     if ( (*a)[sort_row] > (*b)[sort_row] ) return -1;
     return 0;
@@ -135,8 +135,8 @@ void cold_flush(int quota)
 	local_nb_tran = nb_tran - last_nb_tran;
 	local_nb_exec = nb_exec - last_nb_exec;
 	snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
-	Dump_Trace(filename);
 	qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+	Dump_Trace(filename);
 	cold_size = (cold_size_max * quota)/NB_SEG;
 	Trace_flush(cold_size,0);
 	printf("\nL%cU (Quota=%d/32)cache policy flush here!", R_F,quota);
