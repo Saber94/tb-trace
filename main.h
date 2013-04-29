@@ -9,15 +9,15 @@
 #define CODE_GEN_MAX_BLOCKS 1024
 #define F_LENGTH 		20
 #define NB_SEG 		32
+#define CACHE_MAX_BLOCKS CODE_GEN_MAX_BLOCKS/4
 
 #define ADRESS 		0
-#define SIZE 			1
-#define NB_EXEC 		2
-#define NB_TRANS 		3
-#define LAST_EXEC 	4
-#define VALIDE 		5
-#define SECOND_CH 	6
-#define TRACE_ROWS 	7
+#define NB_EXEC 		1
+#define NB_TRANS 		2
+#define LAST_EXEC 	3
+#define VALIDE 		4
+#define SECOND_CH 	5
+#define TRACE_ROWS 	6
 
 #define COLD 			0
 #define HOT				1

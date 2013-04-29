@@ -6,8 +6,11 @@ unsigned int local_nb_exec;
 unsigned int nb_tran;
 unsigned int local_nb_tran;
 unsigned int nb_flush;
-unsigned int Read_Adress,Read_Size;
+//unsigned int nb_inv_tb;
+//unsigned int local_nb_inv_tb;
+unsigned int Read_Adress;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
+//unsigned int cache_adress[CACHE_MAX_BLOCKS];
 unsigned int cold_size;
 unsigned int cold_size_max;
 unsigned int tb_hit = 0;
@@ -16,7 +19,7 @@ unsigned int last_nb_exec;
 unsigned int last_nb_tran;
 int tb_flushed = 0;
 int sort_row;
-char Sim_mode = BASIC_MODE;
+char Sim_mode = LRU_MODE;
 
 
 /* ------------ Needed for qsort() ------------ */
@@ -37,27 +40,27 @@ void Dump_Trace(char *filename)
 	unsigned int Variance;
 
 	f_trace = fopen(filename, "w");
-      	if (f_trace == NULL) {
-         	printf("Couldn't open trace file for writing.\n");
-         	exit(EXIT_FAILURE);
-      		}
-	for(i=0;i < cold_size;i++) 
+   if (f_trace == NULL)
+    {
+		printf("Couldn't open trace file for writing.\n");
+		exit(EXIT_FAILURE);
+	 }
+	for(i=0;i < cold_size;i++)
    	{
-   		Sum_Exec += trace[COLD][i][NB_EXEC];
-   		Sum_Trans += trace[COLD][i][NB_TRANS];
+   	Sum_Exec += trace[COLD][i][NB_EXEC];
+   	Sum_Trans += trace[COLD][i][NB_TRANS];
    	}
    Esperance = (cold_size>0?Sum_Exec/cold_size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i  |  Adress  | Size | Nb Ex | Nb Tr |   Dev   |  Date  | Valide\n"); 
+	fprintf(f_trace,"  i  |  Adress  | Nb Ex | Nb Tr |   Dev   |  Date  | Valide\n"); 
    for(i=0;i < cold_size;i++)
    	{
    		Deviation = trace[COLD][i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %04u | %05u | %05u | %+7d | %6d |   %u\n",
+   		fprintf(f_trace,"%04u | %08x | %05u | %05u | %+7d | %6d |   %u\n",
    					i,
    					trace[COLD][i][ADRESS],
-   					trace[COLD][i][SIZE],
    					trace[COLD][i][NB_EXEC],
    					trace[COLD][i][NB_TRANS],
    					Deviation,
@@ -81,7 +84,7 @@ void Dump_Trace(char *filename)
 }
 
 /* ------------ Used to erase trace[][][] ------------ */
-void Trace_flush(int start,int spot)
+void Trace_flush(int spot,int start)
 {
 	int i,j;
 	for (i=0;i<start;i++) 
@@ -96,50 +99,34 @@ void Trace_flush(int start,int spot)
 }
 
 /* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
-int Lookup_tb(unsigned int Adress)
+int Lookup_tb(int spot, unsigned int Adress, int* key)
 {
 	unsigned int i = 0;
-	while((i<cold_size) && (trace[COLD][i][ADRESS]!=Adress))
+	while((i<cold_size) && (trace[spot][i][ADRESS]!=Adress))
 	 { i++;
-		if (i>cold_size_max-1)
-		{
-		return -1;
-		}
+		if (i>=cold_size_max)
+			{return 2;}								// Cache Full
 	 }
-	if ((trace[COLD][i][ADRESS] == 0) && (cold_size < cold_size_max-1))
+	*key = i;
+	if ((trace[spot][i][ADRESS] == 0) && (cold_size < cold_size_max))
 	 {
 		cold_size++;
-		trace[COLD][i][ADRESS] = Read_Adress;
-		if ((i >= cold_size_max ) || (cold_size >= cold_size_max))
-		{printf("\n i = %d ; cold_size = %d",i,cold_size);
-		 exit(EXIT_FAILURE);
-		 }
+	   return 1;	 								// new alloc
 	 }
-	return i;
+	return 0;										// found
 }
 
 
-void cold_flush(int quota)
+void Display_stat()
 {
 	FILE *fdat;
    float ratio;
-   char R_F;
-	switch(Sim_mode)
-	 {
-		case LRU_MODE: sort_row = 4;	R_F = 'R'; break;
-		case LFU_MODE: sort_row = 2;	R_F = 'F'; break;
-		default :		R_F = '_';
-	 }
+
    nb_flush++;
 	tb_flushed = 1;
 	local_nb_tran = nb_tran - last_nb_tran;
 	local_nb_exec = nb_exec - last_nb_exec;
-	snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
-	qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
-	Dump_Trace(filename);
-	cold_size = (cold_size_max * quota)/NB_SEG;
-	Trace_flush(cold_size,0);
-	printf("\nL%cU (Quota=%d/32)cache policy flush here!", R_F,quota);
+
 	printf("\n ------------- Local Stat -------------\n");
 	printf("nb exec                  = %u\n",local_nb_exec);
 	printf("nb trans                 = %u\n",local_nb_tran);
@@ -171,28 +158,12 @@ void cold_flush(int quota)
 }
 
 /* ------------ Run simulation of cache policy by walking log file ------------ */
-void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
+void Run(FILE *f,unsigned int max_exec, int quota, int threshold,char R_F)
 {
-	FILE *fdat;
 	int i;
+	int found;
 	int next_line_is_adress = 0;
    char line[LINE_MAX];
-
-   float ratio;
-
-	if (tb_flushed)
-	{
-		ratio = (float)local_nb_exec/cold_size_max;
-		tb_flushed = 0;
-		fdat = fopen("exec_ratio.dat", "a");
-      if (fdat == NULL) {
-         printf("Couldn't open ratio file for writing.\n");
-        	exit(EXIT_FAILURE);
-      	}
-		fprintf(fdat, "%d, %f\n", nb_exec, ratio);
-    	fclose(fdat);
-    	if (Sim_mode == '1') Trace_flush(0,0);
-	}
 
 	while (1)
    {
@@ -201,67 +172,46 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold)
    		printf("\nEnd of trace file, Exiting... \n");
    		exit(EXIT_SUCCESS);
    		}
-   	if ((nb_exec > max_exec) && max_exec) 
+
+   	if ((nb_exec > max_exec) && max_exec)
    		{printf("\nEnd of %d executions, please modify max_exec to continue...\n",nb_exec);
    		return;
    		}
-   	if (next_line_is_adress) 
-   		{next_line_is_adress=0;
-   		sscanf(line,"%x",&Read_Adress);
-   		printf("\rTranslation @ 0x%010x",Read_Adress);
-   		}
-   	else 
-   		{switch(line[0]) {
-      case 'I': next_line_is_adress = 1;														// In asm, next line is @
-					 nb_tran++;
-					 if ( (((nb_tran - last_nb_tran) % threshold) == 0) && (Sim_mode != '1') )
-					 {
-						cold_flush(quota);
-						return;
-					 }
-					break;
-      case 'O': sscanf(line+11,"%u",&Read_Size);											// Out asm [size=%]
-					 i = Lookup_tb(Read_Adress);
-					 if (i == -1)
-					 	{
-					 	 printf("\ncache overflow..\n");
-						 exit(EXIT_FAILURE);
-						}
-      			 trace[COLD][i][SIZE] = Read_Size;
-      			 trace[COLD][i][NB_EXEC] = 0;
-      			 trace[COLD][i][NB_TRANS]++;
-      			 trace[COLD][i][VALIDE] = 0;
-      			break;
-      case 'T': sscanf(line+22,"%x",&Read_Adress);											// Trace 
-      			 printf("\rExecution   @ 0x%010x",Read_Adress);
-      			 i = Lookup_tb(Read_Adress);
-      			 if (i == -1)
-      			  {
-      			   cold_flush(quota);
-      			   system("sleep 3");
-      			   i = Lookup_tb(Read_Adress);
-      			   if (trace[COLD][i][ADRESS] == 0)
-      			    {nb_tran++;
-      			    trace[COLD][i][ADRESS] = Read_Adress;
-      			    trace[COLD][i][NB_EXEC] = 0;
-      			 	 trace[COLD][i][NB_TRANS]++;
-      			 	 trace[COLD][i][VALIDE] = 0;
-      			 	 }
-      			  }
-					 if (trace[COLD][i][VALIDE])
-					 	{
-					 		tb_hit++;
-					 	}
-      			 trace[COLD][i][NB_EXEC]++;
-      			 trace[COLD][i][LAST_EXEC] = nb_exec;
-					 nb_exec++;
-					break;     
-		case 'F': if (Sim_mode == '1') 															// Qemu basic cache policy
-					{printf(line); 																	// tb_flush >> must return 
-					 cold_flush(0);
-					return;
-					} 
-      		}
+
+   	if (line[0]=='T')
+   		{ sscanf(line+22,"%x",&Read_Adress);
+      	printf("\rExecution   @ 0x%010x",Read_Adress);
+      	found = Lookup_tb(COLD,Read_Adress,&i);
+      	switch(found)
+      	 {
+      	 case 2:															// if cold cache is full, flush it
+				qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+				printf("\nL%cU (Quota=%d/32)cache policy flush here!", R_F,quota);
+				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
+				Dump_Trace(filename);
+				cold_size = (cold_size_max * quota)/NB_SEG;
+				Trace_flush(COLD,cold_size);
+      	 	Display_stat();
+      	 	getchar();
+      	   Lookup_tb(COLD,Read_Adress,&i); 						// Cannot fail, but may be not found! (cache miss)
+      	   nb_tran++;
+      	   trace[COLD][i][NB_TRANS]++;
+      	 	trace[COLD][i][VALIDE] = 0;
+      	   break;
+			 case 1:															// if returned index is empty
+      	  	nb_tran++;
+      	  	trace[COLD][i][ADRESS] = Read_Adress;
+  			 	trace[COLD][i][NB_TRANS]++;
+  			 	trace[COLD][i][VALIDE] = 0;
+			 	break;
+			 case 0:
+			 	if (trace[COLD][i][VALIDE])							// if TB is translated before last flush
+			 		{tb_hit++;}
+			 	break;
+			 }
+      	trace[COLD][i][NB_EXEC]++;
+      	trace[COLD][i][LAST_EXEC] = nb_exec;
+			nb_exec++;
      		}
    }
 }
@@ -290,11 +240,12 @@ char Simulation_Mode(char Sim_mode)
 /* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
-	unsigned int max_exec = 500000;
+	unsigned int max_exec = 100000;
 	int quota = 8;
 	int threshold;
 	FILE *f;
 	char read_char;
+	char R_F;
 
 	if (argc<2) 
 	{
@@ -310,8 +261,8 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-   Trace_flush(0,0);
-   Trace_flush(0,1);   
+   Trace_flush(COLD,0);
+   Trace_flush(COLD,0);   
    cold_size_max = CODE_GEN_MAX_BLOCKS;
    threshold = cold_size_max - (cold_size_max*quota)/NB_SEG;
 
@@ -323,13 +274,23 @@ int main(int argc, char **argv)
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
 
 	while(1) {
+	switch(Sim_mode)
+	 	{
+		case  LRU_MODE: sort_row = LAST_EXEC;	
+				R_F = 'R'; 
+				break;
+		case LFU_MODE: sort_row = NB_EXEC;	
+				R_F = 'F';
+				break;
+		default :		R_F = '_';
+	 	}
 
 	printf("\nChoose a command:\n");
 	printf("1 - Run Cache policy simulation\n");
 	printf("2 - Modify number of executions into loop\n");
 	printf("3 - Modify Quota of simulated cache policy\n");
 	printf("4 - Modify Trace Size\n");
-	printf("5 - Change Simulated cache policy\n");	
+	printf("5 - Change Simulated cache policy\n");
 	printf("6 - Dump Trace Data\n");
 	printf("7 - Plot hit ratio\n");
 	printf("0 - Exit\n");
@@ -337,7 +298,7 @@ int main(int argc, char **argv)
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'7'));
    switch(read_char) {
    	case '0': return;   	// exit program
-   	case '1': Run(f,max_exec,quota,threshold);
+   	case '1': Run(f,max_exec,quota,threshold,R_F);
    					break;
    	case '2': printf("Actual number of translations is %d, Enter new value (0 for continuous loop) : ",max_exec);
    				 scanf("%u",&max_exec);
