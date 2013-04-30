@@ -2,21 +2,17 @@
 
 
 unsigned int nb_exec;
-unsigned int local_nb_exec;
 unsigned int nb_tran;
-unsigned int local_nb_tran;
 unsigned int nb_flush;
-//unsigned int nb_inv_tb;
-//unsigned int local_nb_inv_tb;
-unsigned int Read_Adress;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 //unsigned int cache_adress[CACHE_MAX_BLOCKS];
+//unsigned int nb_inv_tb;
+//unsigned int local_nb_inv_tb;
 unsigned int cold_size;
 unsigned int cold_size_max;
 unsigned int tb_hit = 0;
 unsigned int global_tb_hit = 0;
-unsigned int last_nb_exec;
-unsigned int last_nb_tran;
+
 int sort_row;
 
 char filename[F_LENGTH];
@@ -30,7 +26,7 @@ int cmp ( const void *pa, const void *pb ) {
     return 0;
 }
 
-/* ------------ Dump actual trace[COLD][][] content into file ------------ */	
+/* ------------ Dump actual trace[][][] content into file ------------ */	
 void Dump_Cache(int spot, char *filename)
 {
 	FILE *f_trace;
@@ -97,10 +93,12 @@ void Cache_flush(int spot,int start)
     }
 }
 
-/* ------------ Lookup for tb in trace[][] using adress of 1st instruction ------------ */
+/* ------------ Lookup for tb in trace[][][] using adress of 1st instruction ------------ */
 int Lookup_tb(int spot, unsigned int Adress, int* key)
 {
 	unsigned int i = 0;
+	if (spot == COLD)
+	{
 	while((i<cold_size) && (trace[spot][i][ADRESS]!=Adress))
 	 { i++;
 		if (i>=cold_size_max)
@@ -110,9 +108,12 @@ int Lookup_tb(int spot, unsigned int Adress, int* key)
 	if ((trace[spot][i][ADRESS] == 0) && (cold_size < cold_size_max))
 	 {
 		cold_size++;
+//		printf("\ni=%d ; size=%d ; adress= 0x%x \n", i,cold_size,Adress);	   
 	   return 0;	 								// new alloc
 	 }
 	return 1;										// found
+	}
+	return 0;
 }
 
 
@@ -120,6 +121,10 @@ void Display_stat()
 {
 	FILE *fdat;
    float ratio;
+   unsigned int local_nb_exec;
+	unsigned int local_nb_tran;
+	static unsigned int last_nb_exec;
+	static unsigned int last_nb_tran;
 
    nb_flush++;
 	local_nb_tran = nb_tran - last_nb_tran;
@@ -162,6 +167,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode)
 	int found_cold;
 	int found_hot;
 	int spot;
+	unsigned int Read_Adress;
    char line[LINE_MAX];
    char smode[4];
    
@@ -197,18 +203,23 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode)
       	  {
       	   tb_hit++;
       	   spot = HOT;
-				}
+			  }
       	else {
+      	spot = COLD;
       	found_cold = Lookup_tb(COLD,Read_Adress,&i);
       	switch(found_cold)
       	 {
       	 case 2:															// if cold cache is full, flush it
-				qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+				if (Sim_mode != MQ_MODE)
+				  {qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);}
 				printf("\n%s",smode);
 				printf(" (Quota=%d/32)cache policy flush here!",quota);
 				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
 				Dump_Cache(COLD,filename);
-				cold_size = (cold_size_max * quota)/NB_SEG;
+				if (Sim_mode != MQ_MODE)
+					{cold_size = (cold_size_max * quota)/NB_SEG;}
+				else
+					{cold_size = 0;}
 				Cache_flush(COLD,cold_size);
       	 	Display_stat();
       	 	getchar();
@@ -228,7 +239,6 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode)
   			 	trace[COLD][i][VALIDE] = 0;
 			 	break;
 			 }
-			 spot = COLD;
 			}
       	trace[spot][i][NB_EXEC]++;
       	trace[spot][i][LAST_EXEC] = nb_exec;
@@ -249,7 +259,7 @@ char Simulation_Mode(char Sim_mode)
 	printf("0- Return\n");
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'4'));
 	switch(read_char) {
-	 	case '0': read_char = Sim_mode;
+	 	case '0': read_char = Sim_mode;break;
 		case BASIC_MODE: printf("Simulation mode : Qemu Basic Policy\n");break;	 	
 		case LRU_MODE	: printf("Simulation mode : LRU Cache Policy\n");break;
 		case LFU_MODE	: printf("Simulation mode : LFU Cache Policy\n");break;
