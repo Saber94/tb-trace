@@ -64,7 +64,7 @@ void Dump_Cache(int spot, char *filename,unsigned int size)
    	}
    Variance = (size > 0 ? Variance / size : 0);
    
-   fprintf(f_trace,"\n----------------------------------------------------------------\n");
+   fprintf(f_trace,"\n----------------------------------------------------------\n");
    
    fprintf(f_trace,"\nSum NbExec = %u\nTotal Exec = %u\nTotal Tran = %u\nEsperance  = %u\nVariance   = %d\nPos values = %u",
    				 Sum_Exec,
@@ -218,17 +218,15 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					{cold_size = (size_max * quota)/NB_SEG;}
 				else
 					{
-						
-					 	for(i=0;i<cold_size/16;i++)
-					 		{	tmp = trace[COLD][i][ADRESS];
-					 			j=0;
-					 		   while((j<=adr_size) && (adresses[j]!=tmp)) {j++;} 
-					 			 if (adresses[j]!=tmp)
+					 	for(i=0;i<(cold_size*quota)/32;i++)
+					 		{tmp = trace[COLD][i][ADRESS];
+					 		 j=0;
+					 		 while((j<=adr_size) && (adresses[j]!=tmp)) {j++;}
+					 		 if (adresses[j]!=tmp)
 					 			  {adresses[adr_size] = tmp;
 					 			   adr_size++;
 					 			  }
-
-					 			if(adr_size>size_max) 
+					 		 if (adr_size>size_max)
 					 			 {snprintf(filename, sizeof(char) * F_LENGTH, "Hotspot_flush.dat");
 									Dump_Cache(HOT,filename,hot_size);}
 					 		}
@@ -237,16 +235,16 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 				Cache_flush(COLD,cold_size,size_max);
       	 	Display_stat();
       	 	getchar();
-      	   Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max); 							// Cannot fail, but may be not found! (cache miss)
+      	   Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max); 				// Cannot fail, but may be not found! (cache miss)
       	   nb_tran++;
       	   trace[COLD][i][NB_TRANS]++;
       	 	trace[COLD][i][VALIDE] = 0;
       	   break;
 			 case 1:
-			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE))						// if TB is translated before last flush
+			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE))			// if TB is translated before last flush
 			 		{tb_hit++;}
 			 	break;
-			 case 0:															// if returned index is empty
+			 case 0:																				// if new allocation needed
       	  	
 				if (Sim_mode != MQ_MODE)
 					{
@@ -267,6 +265,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 		 trace[HOT][hot_size][ADRESS] = Read_Adress;
 					 		 trace[HOT][hot_size][NB_TRANS]++;
       					 trace[HOT][hot_size][LAST_EXEC] = nb_exec;
+      					 i=hot_size;
       					 hot_size++;
       					 spot = HOT;}
       					 else {printf("hotspot_full!\n");exit(EXIT_SUCCESS);}
@@ -276,8 +275,9 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   			 				 trace[COLD][i][NB_TRANS]++;
   			 				 trace[COLD][i][VALIDE] = 0;
   			 				 cold_size++;
-  			 				 nb_tran++;
+  			 				 spot = COLD;
 			 				}
+			 			nb_tran++;	
 			 		}
 			   break;
 			 }}
@@ -381,7 +381,7 @@ int main(int argc, char **argv)
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;
    	case '6': if (cold_size) 
-   					{sprintf(filename,"HotspotTrace.dat"); Dump_Cache(HOT,filename,cold_size);} 
+   					{sprintf(filename,"HotspotTrace.dat"); Dump_Cache(HOT,filename,hot_size);} 
    				 else 
    				 	{printf("No trace data available!\n");} 
    				 break;
