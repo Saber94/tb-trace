@@ -155,13 +155,21 @@ void Display_stat()
 	tb_hit = 0;
 }
 
+/* ------------ Exec instruction --------*/
+void Exec(int spot,unsigned int i, unsigned int Read_Adress)
+{
+	trace[spot][i][ADRESS] = Read_Adress;
+  	trace[spot][i][NB_EXEC]++;
+  	trace[spot][i][LAST_EXEC] = nb_exec;
+  	trace[spot][i][VALIDE] = 0;
+}
+
 /* ------------ Run simulation of cache policy by walking log file ------------ */
 void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, unsigned int size_max)
 {
 	int i,j;
 	int found_cold;
 	int found_hot;
-	int spot;
 	unsigned int Read_Adress;
 	unsigned int tmp;
 	static unsigned int adresses[CACHE_MAX_BLOCKS];
@@ -182,29 +190,30 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 							break;
 	 	}
 
-	while (1)
-   {
-   	if (fgets(line,LINE_MAX,f)==NULL)
-   		{system("gnuplot script_hit.plt");
+	while (1) {
+   if (fgets(line,LINE_MAX,f)==NULL)
+   	{
+   		system("gnuplot script_hit.plt");
    		printf("\nEnd of trace file, Exiting... \n");
    		exit(EXIT_SUCCESS);
-   		}
+   	}
 
-   	if ((nb_exec > max_exec) && max_exec)
-   		{printf("\nEnd of %d executions, please modify max_exec to continue...\n",nb_exec);
-   		return;
-   		}
-
-   	if (line[0]=='T')
-   		{ sscanf(line+22,"%x",&Read_Adress);
-      	printf("\rExecution   @ 0x%010x",Read_Adress);
-      	if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,&i,&hot_size,size_max) == 1))
-      	  {
-      	   tb_hit++;
-      	   spot = HOT;
-			  }
-      	else {
-      	spot = COLD;
+  	if ((nb_exec > max_exec) && max_exec)
+  		{
+  			printf("\nEnd of %d executions, please modify max_exec to continue...\n",nb_exec);
+  			return;
+  		}
+  
+  	if (line[0]=='T')
+  		{
+  			sscanf(line+22,"%x",&Read_Adress);
+     		printf("\rExecution   @ 0x%010x",Read_Adress);
+     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,&i,&hot_size,size_max) == 1))
+     	  		{
+     	   		tb_hit++;
+     	   		Exec(HOT, i, Read_Adress);
+  		  		}
+     		else {
       	found_cold = Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max);
       	switch(found_cold)
       	 {
@@ -227,30 +236,31 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 			   adr_size++;
 					 			  }
 					 		 if (adr_size>size_max)
-					 			 {snprintf(filename, sizeof(char) * F_LENGTH, "Hotspot_flush.dat");
-									Dump_Cache(HOT,filename,hot_size);}
+					 			 {adr_size = 0;}
 					 		}
 					 	cold_size = 0;
 					}
 				Cache_flush(COLD,cold_size,size_max);
       	 	Display_stat();
       	 	getchar();
-      	   Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max); 				// Cannot fail, but may be not found! (cache miss)
-      	   nb_tran++;
-      	   trace[COLD][i][NB_TRANS]++;
-      	 	trace[COLD][i][VALIDE] = 0;
+      	   if (Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max) == 0) 				// Cannot fail, but may be not found! (cache miss)
+      	   		{
+      	   			trace[COLD][i][NB_TRANS]++;
+      	   			nb_tran++;
+      	   		}
+				Exec(COLD, i, Read_Adress);
       	   break;
 			 case 1:
 			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE))			// if TB is translated before last flush
 			 		{tb_hit++;}
+			 	Exec(COLD, i, Read_Adress);	
 			 	break;
 			 case 0:																				// if new allocation needed
       	  	
 				if (Sim_mode != MQ_MODE)
 					{
-      	  			trace[COLD][i][ADRESS] = Read_Adress;
-  			 			trace[COLD][i][NB_TRANS]++;
-  			 			trace[COLD][i][VALIDE] = 0;
+      	  			Exec(COLD, i, Read_Adress);
+      	  			trace[COLD][i][NB_TRANS]++;
   			 			cold_size++;
   			 			nb_tran++;
 			 		}
@@ -262,27 +272,25 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 		{
 					 		 if (hot_size < size_max) 
 					 		 {
-					 		 trace[HOT][hot_size][ADRESS] = Read_Adress;
-					 		 trace[HOT][hot_size][NB_TRANS]++;
-      					 trace[HOT][hot_size][LAST_EXEC] = nb_exec;
-      					 i=hot_size;
-      					 hot_size++;
-      					 spot = HOT;}
-      					 else {printf("hotspot_full!\n");exit(EXIT_SUCCESS);}
+					 		 	Exec(HOT, hot_size, Read_Adress);
+					 		 	trace[HOT][hot_size][NB_TRANS]++;
+      						hot_size++;
+      					 }
+      					 else 
+      					 {
+      					 	printf("hotspot_full!\n");
+      					 	exit(EXIT_SUCCESS);
+      					 }
 					 		}
 					 	else 
-					 		{trace[COLD][i][ADRESS] = Read_Adress;
-  			 				 trace[COLD][i][NB_TRANS]++;
-  			 				 trace[COLD][i][VALIDE] = 0;
+					 		{Exec(COLD, i, Read_Adress);
+					 		trace[COLD][i][NB_TRANS]++;
   			 				 cold_size++;
-  			 				 spot = COLD;
 			 				}
-			 			nb_tran++;	
+			 			nb_tran++;
 			 		}
 			   break;
 			 }}
-      	trace[spot][i][NB_EXEC]++;
-      	trace[spot][i][LAST_EXEC] = nb_exec;
 			nb_exec++;
      		}
    }
@@ -357,7 +365,8 @@ int main(int argc, char **argv)
 	printf("4 - Modify Trace Size\n");
 	printf("5 - Change Simulated cache policy\n");
 	printf("6 - Dump Hotspot cache\n");
-	printf("7 - Plot hit ratio\n");
+	printf("7 - Dump Coldspot cache\n");	
+	printf("8 - Plot hit ratio\n");
 	printf("0 - Exit\n");
 
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'7'));
@@ -380,12 +389,11 @@ int main(int argc, char **argv)
    				 break;
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;
-   	case '6': if (cold_size) 
-   					{sprintf(filename,"HotspotTrace.dat"); Dump_Cache(HOT,filename,hot_size);} 
-   				 else 
-   				 	{printf("No trace data available!\n");} 
+   	case '6': sprintf(filename,"HotspotTrace.dat"); Dump_Cache(HOT,filename,hot_size);
    				 break;
-   	case '7': if (!system("gnuplot script_hit.plt")) printf("\nPlot recorded to hit_out.png"); 
+   	case '7': sprintf(filename,"ColdspotTrace.dat"); Dump_Cache(COLD,filename,cold_size);
+   				 break;
+   	case '8': if (!system("gnuplot script_hit.plt")) printf("\nPlot recorded to hit_out.png"); 
    				 else printf("\nPlot error, verify that source file (hit_ratio.dat) is available\n");
    				 break;
    	default:  break;
