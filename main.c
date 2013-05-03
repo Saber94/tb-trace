@@ -93,22 +93,19 @@ void Cache_flush(int spot,int start,unsigned int size_max)
 }
 
 /* ------------ Lookup for tb in trace[][][] using adress of 1st instruction ------------ */
-int Lookup_tb(int spot, unsigned int Adress, int* key, unsigned int* size, unsigned int size_max)
+int Lookup_tb(int spot, unsigned int Adress, int* key, unsigned int size, unsigned int size_max)
 {
 	unsigned int i = 0;
-	//if (spot == HOT) 	return 0;
 
-	while((i<*size) && (trace[spot][i][ADRESS]!=Adress))
+	while((i<size) && (trace[spot][i][ADRESS]!=Adress))
 	 { i++;
 		if (i>=size_max)
 			{return 2;}								// Cache Full
 	 }
 	*key = i;
-	if ((trace[spot][i][ADRESS] == 0) && (*size < size_max))
-		{return 0;}	 								// new alloc
-
-	return 1;										// found
-
+	if (trace[spot][i][ADRESS] == Adress)
+		{return 1;}	 								// found
+	return 0;										// not found
 }
 
 
@@ -168,7 +165,7 @@ void Exec(int spot,unsigned int i, unsigned int Read_Adress)
 void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, unsigned int size_max)
 {
 	int i,j;
-	int found_cold;
+	static int found_cold;
 	int found_hot;
 	unsigned int Read_Adress;
 	unsigned int tmp;
@@ -207,16 +204,17 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   	if (line[0]=='T')
   		{
   			sscanf(line+22,"%x",&Read_Adress);
-     		printf("\rExecution   @ 0x%010x",Read_Adress);
-     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,&i,&hot_size,size_max) == 1))
+  			printf("\r%8d %d %d ",nb_tran,found_cold,cold_size);
+     		printf("Execution   @ 0x%010x",Read_Adress);
+     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,&i,hot_size,size_max) == 1))
      	  		{
      	   		tb_hit++;
      	   		Exec(HOT, i, Read_Adress);
   		  		}
-     		else {
-      	found_cold = Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max);
-      	switch(found_cold)
-      	 {
+     		else 
+     			{
+      			found_cold = Lookup_tb(COLD,Read_Adress,&i,cold_size,size_max);
+      			switch(found_cold) {
       	 case 2:															// if cold cache is full, flush it
 				qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 				printf("\n%s",smode);
@@ -230,10 +228,11 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 	for(i=0;i<(cold_size*quota)/32;i++)
 					 		{tmp = trace[COLD][i][ADRESS];
 					 		 j=0;
-					 		 while((j<=adr_size) && (adresses[j]!=tmp)) {j++;}
+					 		 while((j<adr_size) && (adresses[j]!=tmp)) {j++;}
 					 		 if (adresses[j]!=tmp)
-					 			  {adresses[adr_size] = tmp;
+					 			  {adresses[j] = tmp;
 					 			   adr_size++;
+					 			   printf("ad=0x%x, i=%d\n",tmp,j);
 					 			  }
 					 		 if (adr_size>size_max)
 					 			 {adr_size = 0;}
@@ -243,7 +242,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 				Cache_flush(COLD,cold_size,size_max);
       	 	Display_stat();
       	 	getchar();
-      	   if (Lookup_tb(COLD,Read_Adress,&i,&cold_size,size_max) == 0) 				// Cannot fail, but may be not found! (cache miss)
+      	   if (Lookup_tb(COLD,Read_Adress,&i,cold_size,size_max) == 0) 				// Cannot fail, but may be not found! (cache miss)
       	   		{
       	   			trace[COLD][i][NB_TRANS]++;
       	   			nb_tran++;
@@ -262,7 +261,6 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       	  			Exec(COLD, i, Read_Adress);
       	  			trace[COLD][i][NB_TRANS]++;
   			 			cold_size++;
-  			 			nb_tran++;
 			 		}
 			 	else
 			 		{						// decide where to translate the new TB
@@ -287,12 +285,13 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 		trace[COLD][i][NB_TRANS]++;
   			 				 cold_size++;
 			 				}
-			 			nb_tran++;
 			 		}
+  			 	nb_tran++;
 			   break;
-			 }}
+									 		}
+			 }
 			nb_exec++;
-     		}
+     	}
    }
 }
 
@@ -322,7 +321,7 @@ int main(int argc, char **argv)
 {
 	unsigned int size_max;
 	unsigned int max_exec = 100000;
-	int quota = 8;
+	int quota = 4;
 	int threshold;
 	FILE *f;
 	char read_char;
