@@ -1,17 +1,17 @@
 #include "main.h"
 
 
-unsigned int nb_exec;
-unsigned int nb_tran;
-unsigned int nb_cold_flush;
-unsigned int nb_hot_flush;
+unsigned int nb_exec = 0;
+unsigned int nb_tran = 0;
+unsigned int nb_cold_flush = 0;
+unsigned int nb_hot_flush = 0;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 //unsigned int nb_inv_tb;
 //unsigned int local_nb_inv_tb;
-unsigned int cold_size;
-unsigned int hot_size;
-unsigned int tb_hit;
-unsigned int global_tb_hit;
+unsigned int cold_size = 0;
+unsigned int hot_size = 0;
+unsigned int tb_hit = 0;
+unsigned int global_tb_hit = 0;
 
 int sort_row;
 
@@ -127,9 +127,9 @@ void Display_stat()
 	printf("nb exec                  = %u\n",local_nb_exec);
 	printf("nb trans                 = %u\n",local_nb_tran);
 	printf("nb cache hit             = %u\n",tb_hit);
-	ratio = ((float)tb_hit / local_nb_exec);
+	ratio = (float)tb_hit / local_nb_exec;
 	printf("cache_hit ratio          = %f\n",ratio);
-	ratio = (float)(local_nb_exec)/(local_nb_tran);
+	ratio = (float)local_nb_exec/local_nb_tran;
 	printf("exec ratio               = %f\n",ratio);
 	printf("\n ------------- Global Stat -------------\n");
 	printf("nb coldspot flush        = %u\n",nb_cold_flush);
@@ -138,10 +138,10 @@ void Display_stat()
 	printf("nb trans                 = %u\n",nb_tran);
 	global_tb_hit += tb_hit;
 	printf("nb cache hit             = %u\n",global_tb_hit);
-	ratio = ((float)global_tb_hit/nb_exec);
+	ratio = (float)global_tb_hit/nb_exec;
 	printf("cache_hit ratio          = %f\n",ratio);
 	fdat = fopen("hit_ratio.dat", "a");
-	if (fdat == NULL) 
+	if (fdat == NULL)
 	{
 	printf("Couldn't open hit_ratio file for writing.\n");
    exit(EXIT_FAILURE);
@@ -175,7 +175,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 	static unsigned int adr_size;
    char line[LINE_MAX];
    char smode[4];
-   static int cold_cache_flushed;
+   static int cold_cache_flush;
    
    switch(Sim_mode)
 	 	{
@@ -206,10 +206,10 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   
   	if (line[0]=='T')
   		{
-  			if (cold_cache_flushed)
+  			if (cold_cache_flush)
   				{
   					Cache_flush(COLD,cold_size,size_max);
-  					cold_cache_flushed = 0;
+  					cold_cache_flush = 0;
       	   	if (Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 0) 	// Cannot fail, but may be not found! (cache miss)
       	   	 {
       	   		trace[COLD][i][NB_TRANS]++;
@@ -240,23 +240,23 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					{cold_size = (size_max * quota)/NB_SEG;}
 				else
 					{
-					 	for(i=0;i<(cold_size*quota)/32;i++)
-					 		{tmp = trace[COLD][i][ADRESS];
-					 		 j=0;
+						if (adr_size>(size_max - (size_max * quota)/NB_SEG)) {adr_size = 0;}
+					 	for(i=0;i<(cold_size * quota)/NB_SEG;i++)
+					 		{
+					 			adresses[adr_size] = trace[COLD][i][ADRESS];adr_size++;
+/*						 		 j=0;
 					 		 while((j<adr_size) && (adresses[j]!=tmp)) {j++;}
-					 		 if (adresses[j]!=tmp)
-					 			  {adresses[j] = tmp;
+					 		 if (adresses[j] != tmp)
+					 			 {
+					 			   printf(" not found 0x%x : 0x%x (%d:%d)\n",tmp,adresses[j],adr_size,j);
+					 			   adresses[j] = tmp;
 					 			   adr_size++;
-					 			   //printf("ad=0x%x, i=%d\n",tmp,j);
-					 			  }
-					 		 if (adr_size>size_max)
-					 			 {adr_size = 0;}
+					 			 } else {printf(" found 0x%x : 0x%x (%d:%d)\n",tmp,adresses[j],adr_size,j);}*/
 					 		}
 					 	cold_size = 0;
 					}
-				
       	 	Display_stat();
-      	 	cold_cache_flushed = 1;
+      	 	cold_cache_flush = 1;
       	 	return;
       	   break;
 			 case 1:
