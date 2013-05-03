@@ -3,14 +3,15 @@
 
 unsigned int nb_exec;
 unsigned int nb_tran;
-unsigned int nb_flush;
+unsigned int nb_cold_flush;
+unsigned int nb_hot_flush;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 //unsigned int nb_inv_tb;
 //unsigned int local_nb_inv_tb;
 unsigned int cold_size;
 unsigned int hot_size;
-unsigned int tb_hit = 0;
-unsigned int global_tb_hit = 0;
+unsigned int tb_hit;
+unsigned int global_tb_hit;
 
 int sort_row;
 
@@ -93,7 +94,7 @@ void Cache_flush(int spot,int start,unsigned int size_max)
 }
 
 /* ------------ Lookup for tb in trace[][][] using adress of 1st instruction ------------ */
-int Lookup_tb(int spot, unsigned int Adress, int* key, unsigned int size, unsigned int size_max)
+int Lookup_tb(int spot, unsigned int Adress, unsigned int size, unsigned int size_max, int* key)
 {
 	unsigned int i = 0;
 
@@ -118,7 +119,7 @@ void Display_stat()
 	static unsigned int last_nb_exec;
 	static unsigned int last_nb_tran;
 
-   nb_flush++;
+   nb_cold_flush++;
 	local_nb_tran = nb_tran - last_nb_tran;
 	local_nb_exec = nb_exec - last_nb_exec;
 
@@ -131,7 +132,8 @@ void Display_stat()
 	ratio = (float)(local_nb_exec)/(local_nb_tran);
 	printf("exec ratio               = %f\n",ratio);
 	printf("\n ------------- Global Stat -------------\n");
-	printf("nb flush                 = %u\n",nb_flush);
+	printf("nb coldspot flush        = %u\n",nb_cold_flush);
+	printf("nb hotspot flush         = %u\n",nb_hot_flush);	
 	printf("nb exec                  = %u\n",nb_exec);
 	printf("nb trans                 = %u\n",nb_tran);
 	global_tb_hit += tb_hit;
@@ -165,7 +167,7 @@ void Exec(int spot,unsigned int i, unsigned int Read_Adress)
 void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, unsigned int size_max)
 {
 	int i,j;
-	static int found_cold;
+	int found_cold;
 	int found_hot;
 	unsigned int Read_Adress;
 	unsigned int tmp;
@@ -173,6 +175,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 	static unsigned int adr_size;
    char line[LINE_MAX];
    char smode[4];
+   static int cold_cache_flushed;
    
    switch(Sim_mode)
 	 	{
@@ -203,23 +206,35 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   
   	if (line[0]=='T')
   		{
+  			if (cold_cache_flushed)
+  				{
+  					Cache_flush(COLD,cold_size,size_max);
+  					cold_cache_flushed = 0;
+      	   	if (Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 0) 	// Cannot fail, but may be not found! (cache miss)
+      	   	 {
+      	   		trace[COLD][i][NB_TRANS]++;
+      	   		nb_tran++;
+      	   	 }
+					Exec(COLD, i, Read_Adress);  					
+					nb_exec++;
+  				}
   			sscanf(line+22,"%x",&Read_Adress);
-  			printf("\r%8d %d %d ",nb_tran,found_cold,cold_size);
+  			printf("\rt=%6d / size=%d %d/",nb_tran,cold_size,hot_size);
      		printf("Execution   @ 0x%010x",Read_Adress);
-     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,&i,hot_size,size_max) == 1))
+     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1))
      	  		{
      	   		tb_hit++;
      	   		Exec(HOT, i, Read_Adress);
   		  		}
      		else 
      			{
-      			found_cold = Lookup_tb(COLD,Read_Adress,&i,cold_size,size_max);
+      			found_cold = Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i);
       			switch(found_cold) {
       	 case 2:															// if cold cache is full, flush it
 				qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
 				printf("\n%s",smode);
 				printf(" (Quota=%d/32)cache policy flush here!",quota);
-				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_flush);
+				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_cold_flush);
 				Dump_Cache(COLD,filename,cold_size);
 				if (Sim_mode != MQ_MODE)
 					{cold_size = (size_max * quota)/NB_SEG;}
@@ -232,22 +247,17 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 		 if (adresses[j]!=tmp)
 					 			  {adresses[j] = tmp;
 					 			   adr_size++;
-					 			   printf("ad=0x%x, i=%d\n",tmp,j);
+					 			   //printf("ad=0x%x, i=%d\n",tmp,j);
 					 			  }
 					 		 if (adr_size>size_max)
 					 			 {adr_size = 0;}
 					 		}
 					 	cold_size = 0;
 					}
-				Cache_flush(COLD,cold_size,size_max);
+				
       	 	Display_stat();
-      	 	getchar();
-      	   if (Lookup_tb(COLD,Read_Adress,&i,cold_size,size_max) == 0) 				// Cannot fail, but may be not found! (cache miss)
-      	   		{
-      	   			trace[COLD][i][NB_TRANS]++;
-      	   			nb_tran++;
-      	   		}
-				Exec(COLD, i, Read_Adress);
+      	 	cold_cache_flushed = 1;
+      	 	return;
       	   break;
 			 case 1:
 			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE))			// if TB is translated before last flush
@@ -263,7 +273,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   			 			cold_size++;
 			 		}
 			 	else
-			 		{						// decide where to translate the new TB
+			 		{																				// decide where to translate the new TB
 			 			j=0;
 						while((j<=adr_size) && (adresses[j]!=Read_Adress)) {j++;} 
 					 	if (adresses[j] == Read_Adress)
@@ -276,14 +286,16 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       					 }
       					 else 
       					 {
-      					 	printf("hotspot_full!\n");
-      					 	exit(EXIT_SUCCESS);
+      					 	Cache_flush(HOT,0,size_max);
+      					 	hot_size=0;
+      					 	nb_hot_flush++;
       					 }
 					 		}
 					 	else 
-					 		{Exec(COLD, i, Read_Adress);
-					 		trace[COLD][i][NB_TRANS]++;
-  			 				 cold_size++;
+					 		{
+					 			Exec(COLD, i, Read_Adress);
+					 			trace[COLD][i][NB_TRANS]++;
+  			 				 	cold_size++;
 			 				}
 			 		}
   			 	nb_tran++;
@@ -320,7 +332,7 @@ char Simulation_Mode(char Sim_mode)
 int main(int argc, char **argv)
 {
 	unsigned int size_max;
-	unsigned int max_exec = 100000;
+	unsigned int max_exec = 0;
 	int quota = 4;
 	int threshold;
 	FILE *f;
@@ -368,7 +380,7 @@ int main(int argc, char **argv)
 	printf("8 - Plot hit ratio\n");
 	printf("0 - Exit\n");
 
-	do {read_char = getchar();} while((read_char <'0') || (read_char >'7'));
+	do {read_char = getchar();} while((read_char <'0') || (read_char >'8'));
    switch(read_char) {
    	case '0': return;   	// exit program
    	case '1': Run(f,max_exec,quota,threshold,Sim_mode,size_max);
