@@ -3,6 +3,8 @@
 
 unsigned int nb_exec = 0;
 unsigned int nb_tran = 0;
+unsigned int last_nb_exec;
+unsigned int last_nb_tran;
 unsigned int nb_cold_flush = 0;
 unsigned int nb_hot_flush = 0;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
@@ -10,7 +12,8 @@ unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 //unsigned int local_nb_inv_tb;
 unsigned int cold_size = 0;
 unsigned int hot_size = 0;
-unsigned int tb_hit = 0;
+unsigned int hotspot_hit = 0;
+unsigned int total_hit = 0;
 unsigned int global_tb_hit = 0;
 
 int sort_row;
@@ -116,8 +119,7 @@ void Display_stat()
    float ratio;
    unsigned int local_nb_exec;
 	unsigned int local_nb_tran;
-	static unsigned int last_nb_exec;
-	static unsigned int last_nb_tran;
+
 
    nb_cold_flush++;
 	local_nb_tran = nb_tran - last_nb_tran;
@@ -126,9 +128,10 @@ void Display_stat()
 	printf("\n ------------- Local Stat -------------\n");
 	printf("nb exec                  = %u\n",local_nb_exec);
 	printf("nb trans                 = %u\n",local_nb_tran);
-	printf("nb cache hit             = %u\n",tb_hit);
-	ratio = (float)tb_hit / local_nb_exec;
-	printf("cache_hit ratio          = %f\n",ratio);
+	printf("nb hotspot hit           = %u\n",hotspot_hit);
+	ratio = (float)hotspot_hit / local_nb_exec;
+	printf("cache_hit ratio          = %f\n",ratio);	
+	printf("total cache hit          = %u\n",total_hit);
 	ratio = (float)local_nb_exec/local_nb_tran;
 	printf("exec ratio               = %f\n",ratio);
 	printf("\n ------------- Global Stat -------------\n");
@@ -136,8 +139,8 @@ void Display_stat()
 	printf("nb hotspot flush         = %u\n",nb_hot_flush);	
 	printf("nb exec                  = %u\n",nb_exec);
 	printf("nb trans                 = %u\n",nb_tran);
-	global_tb_hit += tb_hit;
-	printf("nb cache hit             = %u\n",global_tb_hit);
+	global_tb_hit += hotspot_hit;
+	printf("total cache hit          = %u\n",global_tb_hit);
 	ratio = (float)global_tb_hit/nb_exec;
 	printf("cache_hit ratio          = %f\n",ratio);
 	fdat = fopen("hit_ratio.dat", "a");
@@ -146,12 +149,13 @@ void Display_stat()
 	printf("Couldn't open hit_ratio file for writing.\n");
    exit(EXIT_FAILURE);
    }
-   ratio = ((float)tb_hit / local_nb_exec);
+   ratio = ((float)hotspot_hit / local_nb_exec);
 	fprintf(fdat, "%d, %f\n", nb_exec, ratio);
    fclose(fdat);
 	last_nb_exec = nb_exec;
 	last_nb_tran = nb_tran;
-	tb_hit = 0;
+	total_hit = 0;
+	hotspot_hit = 0;
 }
 
 /* ------------ Exec instruction --------*/
@@ -215,7 +219,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       	   		trace[COLD][i][NB_TRANS]++;
       	   		nb_tran++;
       	   	 }
-					Exec(COLD, i, Read_Adress);  					
+					Exec(COLD, i, Read_Adress);
 					nb_exec++;
   				}
   			sscanf(line+22,"%x",&Read_Adress);
@@ -223,7 +227,8 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
      		printf("Execution   @ 0x%010x",Read_Adress);
      		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1))
      	  		{
-     	   		tb_hit++;
+     	  			hotspot_hit++;
+     	   		total_hit++;
      	   		Exec(HOT, i, Read_Adress);
   		  		}
      		else 
@@ -261,7 +266,10 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       	   break;
 			 case 1:
 			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE))			// if TB is translated before last flush
-			 		{tb_hit++;}
+			 		{
+			 			hotspot_hit++;
+			 		}
+			 	total_hit++;
 			 	Exec(COLD, i, Read_Adress);	
 			 	break;
 			 case 0:																				// if new allocation needed
@@ -286,7 +294,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       					 }
       					 else 
       					 {
-      					 	Cache_flush(HOT,0,size_max);
+      					 	Cache_flush(HOT,0,hot_size);
       					 	hot_size=0;
       					 	nb_hot_flush++;
       					 }
