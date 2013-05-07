@@ -177,7 +177,7 @@ inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
 		{
 			 if (hot_size >= size_max) 
 				 {
-      		 	sprintf(filename,"HotspotTrace.dat");
+      		 	snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_H%u.dat", nb_hot_flush);
       		 	Dump_Cache(HOT,filename,hot_size);
       		 	Cache_flush(HOT,0,hot_size);
       		 	hot_size=0;
@@ -207,8 +207,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 	unsigned int i,j;
 	unsigned int found_cold;
 	unsigned int found_hot;
-	unsigned int Esperance;
-	unsigned int Sum_Exec = 0;
+	unsigned int nb_adr;
 	unsigned int Read_Adress;
 	unsigned int tmp;
 
@@ -261,7 +260,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   	if (line[0]=='T')
   		{
   			sscanf(line+22,"%x",&Read_Adress);
-  			printf("\rt=%6d / Sizes=C%4d H%4d/", nb_tran, cold_size, hot_size);
+  			printf("\rTranslations=%6d / Sizes=(C%4d) (H%4d) / ", nb_tran, cold_size, hot_size);
      		printf("Execution   @ 0x%010x",Read_Adress);
      		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1) && (trace[HOT][i][VALIDE]))
      	  		{
@@ -274,7 +273,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       			found_cold = Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i);
       			switch(found_cold) {
       	 case 2:															// if cold cache is full, flush it
-				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_cold_flush);
+				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_C%u.dat", nb_cold_flush);
 				if (Sim_mode != MQ_MODE)
 					{
 						qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
@@ -286,24 +285,23 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 				else
 					{
 						Dump_Cache(COLD,filename,cold_size);
-							for(i=0;i < cold_size;i++)
-    							{
-   								Sum_Exec += trace[COLD][i][NB_EXEC];
-    							}
-   					Esperance = Sum_Exec/cold_size;
-						printf("\n%s",smode);
-						printf(" (Esp=%d)cache policy flush here!",Esperance);
+   					nb_adr = 0;
+
 					 	for(i=0;i<cold_size;i++)
-					 		{ if(trace[COLD][i][NB_EXEC] > Esperance) 
+					 		{ if(trace[COLD][i][NB_EXEC] > quota) 
 					 		 {
+					 		 	nb_adr++;
 					 			adresses[adr_size] = trace[COLD][i][ADRESS];
 					 			adr_size++;
 								if (adr_size >=CACHE_MAX_BLOCKS)
 									{
 										adr_size = 0;
 									}
+									
 							 }
 					 		}
+					 	printf("\n%s",smode);
+						printf(" (nb added @=%d)cache policy flush here!",nb_adr);
 					 	cold_size = 0;
 					}
       	 	Display_stat();
@@ -378,7 +376,19 @@ char Simulation_Mode(char Sim_mode)
 	 	}
 	return read_char;
 }
-
+void Display_menu()
+{
+	printf("1 - Run Cache policy simulation\n");
+	printf("2 - Modify number of executions into loop\n");
+	printf("3 - Modify Quota of simulated cache policy\n");
+	printf("4 - Modify Trace Size\n");
+	printf("5 - Change Simulated cache policy\n");
+	printf("6 - Dump Hotspot cache\n");
+	printf("7 - Dump Coldspot cache\n");	
+	printf("8 - Plot hit ratio\n");
+	printf("9 - Display this menu\n");
+	printf("0 - Exit\n");
+}
 /* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
@@ -417,21 +427,14 @@ int main(int argc, char **argv)
 	system( "clear" );
 	printf("\n *** Qemu Translation Cache trace tool *** TIMA LAB - March 2013 ***\n\n");    
 
+	Display_menu();	
+	
 	while(1) {
 
-
 	printf("\nChoose a command:\n");
-	printf("1 - Run Cache policy simulation\n");
-	printf("2 - Modify number of executions into loop\n");
-	printf("3 - Modify Quota of simulated cache policy\n");
-	printf("4 - Modify Trace Size\n");
-	printf("5 - Change Simulated cache policy\n");
-	printf("6 - Dump Hotspot cache\n");
-	printf("7 - Dump Coldspot cache\n");	
-	printf("8 - Plot hit ratio\n");
-	printf("0 - Exit\n");
 
-	do {read_char = getchar();} while((read_char <'0') || (read_char >'8'));
+
+	do {read_char = getchar();} while((read_char <'0') || (read_char >'9'));
    switch(read_char) {
    	case '0': return;   	// exit program
    	case '1': Run(f,max_exec,quota,threshold,Sim_mode,size_max);
@@ -442,7 +445,7 @@ int main(int argc, char **argv)
    	case '3': do {printf("Actual Quota=%d/32, Enter new value : ",quota);
    					  scanf("%d/32",&quota);
    					  threshold = size_max - (size_max*quota)/NB_SEG;
-   					  } while((quota < 1) || (quota > 16));
+   					  } while((quota < 1) || (quota > 32));
    				 break;
    	case '4': do {printf("Actual Trace size = %d, Enter new value : ",size_max);
    					  scanf("%d",&size_max);
@@ -458,7 +461,7 @@ int main(int argc, char **argv)
    	case '8': if (!system("gnuplot script_hit.plt")) printf("\nPlot recorded to hit_out.png"); 
    				 else printf("\nPlot error, verify that source file (hit_ratio.dat) is available\n");
    				 break;
-   	default:  break;
+   	default:  Display_menu();break;
    	}
 	}
    fclose(f);
