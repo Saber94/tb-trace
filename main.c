@@ -133,7 +133,7 @@ void Display_stat()
 	printf("nb trans                 = %u\n",local_nb_tran);
 	printf("hotspot cache hit        = %u\n",hotspot_hit);
 	ratio = (float)hotspot_hit / local_nb_exec;
-	printf("cache_hit ratio          = %f\n",ratio);	
+	printf("hotspot hit ratio        = %f\n",ratio);	
 	printf("total cache hit          = %u\n",total_hit);
 
 	printf("\n ------------- Global Stat -------------\n");
@@ -161,52 +161,40 @@ void Display_stat()
 	hotspot_hit = 0;
 }
 
-/* ------------ Execute tb --------*/
-inline void Execute(int spot,unsigned int i, unsigned int Read_Adress)
+/* ------------------- Execute tb ------------------- */
+inline void Execute(int spot,unsigned int i)
 {
-	trace[spot][i][ADRESS] = Read_Adress;
   	trace[spot][i][NB_EXEC]++;
   	trace[spot][i][LAST_EXEC] = nb_exec;
-/*  	trace[spot][i][VALIDE] = 1;*/
 }
 
-/*-----------------Translate tb ---------------*/
+/* ------------------- Translate tb ------------------- */
 inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
 {																				// decide where to translate the new TB
-	int j=0;
+	int j = 0;
 	while((j<=adr_size) && (adresses[j]!=Read_Adress)) {j++;} 
 	if (adresses[j] == Read_Adress)
 		{
-			 if (hot_size < size_max) 
+			 if (hot_size >= size_max) 
 				 {
-/*				 	if(trace[HOT][hot_size][VALIDE]==0)
-				 		{
-				 			trace[HOT][hot_size][VALIDE] = 1;
-				 			trace[HOT][hot_size][NB_TRANS]++;
-				 			nb_tran++;
-				 		}*/
-		 		 	Execute(HOT, hot_size, Read_Adress);
-		 		 	trace[HOT][hot_size][NB_TRANS]++;
-      			hot_size++;
-      		 }
-      	 else 				// flush hotspot
-      		 {
       		 	sprintf(filename,"HotspotTrace.dat");
       		 	Dump_Cache(HOT,filename,hot_size);
       		 	Cache_flush(HOT,0,hot_size);
       		 	hot_size=0;
       		 	nb_hot_flush++;
       		 }
+			trace[HOT][hot_size][ADRESS] = Read_Adress;
+			trace[HOT][hot_size][NB_TRANS]++;				 	
+			trace[HOT][hot_size][VALIDE] = 1;
+			Execute(HOT, hot_size);
+      	hot_size++;
+      		 
 		}
 	else
 		{
-/*			if(trace[COLD][i][VALIDE]==0) 
-				{
-				 	trace[COLD][i][VALIDE] = 1;
-				 	trace[COLD][i][NB_TRANS]++;
-				 	nb_tran++;
-				}*/
-		 	Execute(COLD, i, Read_Adress);
+			trace[COLD][i][ADRESS] = Read_Adress;
+			trace[COLD][i][VALIDE] = 1;
+		 	Execute(COLD, i);
 		 	trace[COLD][i][NB_TRANS]++;
   			cold_size++;
 		}
@@ -259,11 +247,12 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   			cold_cache_flush = 0;
       	if (Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 0) 	// Cannot fail, but may be not found! (cache miss)
       	 {
+      	 	trace[COLD][i][ADRESS] = Read_Adress;
       		trace[COLD][i][NB_TRANS]++;
       		trace[COLD][i][VALIDE] = 1;
       		nb_tran++;
       	 }
-			Execute(COLD, i, Read_Adress);
+			Execute(COLD, i);
 			nb_exec++;
   		}
   
@@ -272,11 +261,11 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   			sscanf(line+22,"%x",&Read_Adress);
   			printf("\rt=%6d / Sizes=C%4d H%4d/", nb_tran, cold_size, hot_size);
      		printf("Execution   @ 0x%010x",Read_Adress);
-     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1) /*&& (trace[HOT][i][VALIDE])*/)
+     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1) && (trace[HOT][i][VALIDE]))
      	  		{
      	  			hotspot_hit++;
      	   		total_hit++;
-     	   		Execute(HOT, i, Read_Adress);
+     	   		Execute(HOT, i);
   		  		}
      		else 
      			{
@@ -307,24 +296,24 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 			 case 1:
 			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE) && (i < (size_max * quota)/NB_SEG) && (nb_cold_flush>0))			// if TB is translated before last flush
 			 		{
-			 			trace[COLD][i][NB_EXEC]++;
 			 			hotspot_hit++;
 			 			total_hit++;
 			 		}
 			 	else //if (trace[COLD][i][VALIDE])
 			 		{
 			 			total_hit++;
-			 			Execute(COLD, i, Read_Adress);
 			 		}
+			 	Execute(COLD, i);	
 			 	//else goto not_found;
 			 	break;
 			 case 0:																				// if new allocation needed
       	  	not_found:
 				if (Sim_mode != MQ_MODE)
 					{
-      	  			Execute(COLD, i, Read_Adress);
+      	  			trace[COLD][i][ADRESS] = Read_Adress;
       	  			trace[COLD][i][NB_TRANS]++;
       	  			trace[COLD][i][VALIDE] = 1;
+      	  			Execute(COLD, i);
   			 			cold_size++;
 			 		}
 			 	else
@@ -345,7 +334,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					trace[HOT][i][VALIDE] = 0;
 					inv_count++;
 				}
-			else if(Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 1) 
+			else if(Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 1)
 				{
 					trace[COLD][i][VALIDE] = 0;
 
@@ -367,7 +356,7 @@ char Simulation_Mode(char Sim_mode)
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'4'));
 	switch(read_char) {
 	 	case '0': read_char = Sim_mode;break;
-		case BASIC_MODE: printf("Simulation mode : Qemu Basic Policy\n");break;	 	
+		case BASIC_MODE: printf("Simulation mode : Qemu Basic Policy\n");break;
 		case LRU_MODE	: printf("Simulation mode : LRU Cache Policy\n");break;
 		case LFU_MODE	: printf("Simulation mode : LFU Cache Policy\n");break;
 		case MQ_MODE	: printf("Simulation mode : MQ Cache Policy\n");break;
