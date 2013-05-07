@@ -54,12 +54,12 @@ void Dump_Cache(int spot, char *filename,unsigned int size)
    Esperance = (size>0?Sum_Exec/size:0);
    Variance = 0;
    nb_pos_dev = 0;
-	fprintf(f_trace,"  i  |  Adress  | Nb Ex | Nb Tr |   Dev   |  Date  | Valide\n"); 
+	fprintf(f_trace,"  i  |  Adress  | Nb Ex | Nb Tr |   Dev   |  Date   | Valide\n"); 
    for(i=0;i < size;i++)
    	{
    		Deviation = trace[spot][i][NB_EXEC] - Esperance;
    		if (Deviation > 0) nb_pos_dev++;
-   		fprintf(f_trace,"%04u | %08x | %05u | %05u | %+7d | %6d |   %u\n",
+   		fprintf(f_trace,"%04u | %08x | %05u | %05u | %+7d | %7d |   %u\n",
    					i,
    					trace[spot][i][ADRESS],
    					trace[spot][i][NB_EXEC],
@@ -172,7 +172,7 @@ inline void Execute(int spot,unsigned int i)
 inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
 {																				// decide where to translate the new TB
 	int j = 0;
-	while((j<=adr_size) && (adresses[j]!=Read_Adress)) {j++;} 
+	while((j<CACHE_MAX_BLOCKS) && (adresses[j]!=Read_Adress)) {j++;} 
 	if (adresses[j] == Read_Adress)
 		{
 			 if (hot_size >= size_max) 
@@ -204,9 +204,11 @@ inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
 /* ------------ Run simulation of cache policy by walking log file ------------ */
 void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, unsigned int size_max)
 {
-	int i,j;
-	int found_cold;
-	int found_hot;
+	unsigned int i,j;
+	unsigned int found_cold;
+	unsigned int found_hot;
+	unsigned int Esperance;
+	unsigned int Sum_Exec = 0;
 	unsigned int Read_Adress;
 	unsigned int tmp;
 
@@ -272,20 +274,35 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
       			found_cold = Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i);
       			switch(found_cold) {
       	 case 2:															// if cold cache is full, flush it
-				qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
-				printf("\n%s",smode);
-				printf(" (Quota=%d/32)cache policy flush here!",quota);
 				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_%u.dat", nb_cold_flush);
-				Dump_Cache(COLD,filename,cold_size);
 				if (Sim_mode != MQ_MODE)
-					{cold_size = (size_max * quota)/NB_SEG;}
+					{
+						qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+						Dump_Cache(COLD,filename,cold_size);
+						printf("\n%s",smode);
+						cold_size = (size_max * quota)/NB_SEG;
+						printf(" (Quota=%d/32)cache policy flush here!",quota);	
+					}
 				else
 					{
-						if (adr_size>(size_max - (size_max * quota)/NB_SEG)) {adr_size = 0;}
-					 	for(i=0;i<(cold_size * quota)/NB_SEG;i++)
-					 		{
+						Dump_Cache(COLD,filename,cold_size);
+							for(i=0;i < cold_size;i++)
+    							{
+   								Sum_Exec += trace[COLD][i][NB_EXEC];
+    							}
+   					Esperance = Sum_Exec/cold_size;
+						printf("\n%s",smode);
+						printf(" (Esp=%d)cache policy flush here!",Esperance);
+					 	for(i=0;i<cold_size;i++)
+					 		{ if(trace[COLD][i][NB_EXEC] > Esperance) 
+					 		 {
 					 			adresses[adr_size] = trace[COLD][i][ADRESS];
 					 			adr_size++;
+								if (adr_size >=CACHE_MAX_BLOCKS)
+									{
+										adr_size = 0;
+									}
+							 }
 					 		}
 					 	cold_size = 0;
 					}
@@ -304,10 +321,8 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 			 			total_hit++;
 			 		}
 			 	Execute(COLD, i);	
-			 	//else goto not_found;
 			 	break;
 			 case 0:																				// if new allocation needed
-      	  	not_found:
 				if (Sim_mode != MQ_MODE)
 					{
       	  			trace[COLD][i][ADRESS] = Read_Adress;

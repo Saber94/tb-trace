@@ -9,7 +9,7 @@
 #define CODE_GEN_MAX_BLOCKS 1024
 #define F_LENGTH 		20
 #define NB_SEG 		32
-#define CACHE_MAX_BLOCKS CODE_GEN_MAX_BLOCKS/4
+#define CACHE_MAX_BLOCKS 512
 
 #define ADRESS 		0
 #define NB_EXEC 		1
