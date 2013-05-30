@@ -287,7 +287,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int Sim_mode)
    					nb_adr = 0;
 
 					 	for(i=0;i<cold_size;i++)
-					 		{ if(trace[COLD][i][NB_EXEC] > quota) 
+					 		{ if(trace[COLD][i][NB_EXEC] > F_THRESHOLD) 
 					 		 {
 					 		 	nb_adr++;
 					 			adresses[adr_size] = trace[COLD][i][ADRESS];
@@ -392,7 +392,8 @@ void Display_menu()
 int main(int argc, char **argv)
 {
 
-	unsigned int max_exec = 1000000;
+	unsigned int max_exec = 100000;
+	unsigned int size_total = CODE_GEN_MAX_BLOCKS;
 	int quota = 16;
 	hot_size_max = ((CODE_GEN_MAX_BLOCKS * quota)/NB_SEG);
 	size_max = CODE_GEN_MAX_BLOCKS - hot_size_max;
@@ -439,18 +440,27 @@ int main(int argc, char **argv)
    	case '2': printf("Actual number of translations is %d, Enter new value (0 for continuous loop) : ",max_exec);
    				 scanf("%u",&max_exec);
    				 break;
-   	case '3': do { printf("Actual Quota=%d/32, Enter new value : ",quota);
+   	case '3': do { 
+   						printf("Actual Quota=%d/32, Enter new value : ",quota);
    					   scanf("%d/32",&quota);
+   					   hot_size_max = ((size_total * quota)/NB_SEG);
+							if (Sim_mode == MQ_MODE) 
+								{size_max = size_total - hot_size_max;} 
+							else 
+								{size_max = size_total;}
    					 }
    					 	while((quota < 1) || (quota > 32));
    				 break;
    	case '4': do { 
-   						printf("Actual Trace size = %d, Enter new value : ",((Sim_mode == MQ_MODE)?size_max+hot_size_max:size_max));
-   					   scanf("%d",&size_max);
-   					  	hot_size_max = ((size_max * quota)/NB_SEG);
-							if (Sim_mode == MQ_MODE) size_max = CODE_GEN_MAX_BLOCKS - hot_size_max;
+   						printf("Actual Trace size = %d, Enter new value : ",size_total);
+   					   scanf("%d",&size_total);
+   					  	hot_size_max = ((size_total * quota)/NB_SEG);
+							if (Sim_mode == MQ_MODE) 
+								{size_max = size_total - hot_size_max;} 
+							else 
+								{size_max = size_total;}
    					 }
-   					 	while((size_max>CODE_GEN_MAX_BLOCKS) || (size_max%NB_SEG));
+   					 	while((size_max>CODE_GEN_MAX_BLOCKS)  /*|| (size_max%NB_SEG)*/);
    				 break;
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;

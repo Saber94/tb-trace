@@ -21,6 +21,8 @@
 #define COLD 			0
 #define HOT				1
 
+#define F_THRESHOLD   12
+
 
 #define BASIC_MODE	'1'
 #define LRU_MODE		'2'
