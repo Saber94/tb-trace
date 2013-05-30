@@ -9,8 +9,6 @@ unsigned int nb_cold_flush = 0;
 unsigned int nb_hot_flush = 0;
 unsigned int trace[2][CODE_GEN_MAX_BLOCKS][TRACE_ROWS];
 unsigned int adresses[CACHE_MAX_BLOCKS];
-//unsigned int nb_inv_tb;
-//unsigned int local_nb_inv_tb;
 unsigned int cold_size = 0;
 unsigned int hot_size = 0;
 unsigned int adr_size;
@@ -18,6 +16,8 @@ unsigned int hotspot_hit = 0;
 unsigned int total_hit = 0;
 unsigned int global_tb_hit = 0;
 unsigned int inv_count = 0;
+unsigned int hot_size_max;
+unsigned int size_max;
 
 int sort_row;
 
@@ -85,14 +85,14 @@ void Dump_Cache(int spot, char *filename,unsigned int size)
 }
 
 /* ------------ Used to erase trace[][][] ------------ */
-void Cache_flush(int spot,int start,unsigned int size_max)
+void Cache_flush(int spot,int start, unsigned int size)
 {
 	int i,j;
 	for (i=0;i<start;i++) 
 	 {
 	 	trace[spot][i][VALIDE] = 1;  				// tb not flushed are valid (until retranslation)
 	 }
-   for(i=start;i<size_max;i++)				// flush all remaining trace data
+   for(i=start;i<size;i++)				// flush all remaining trace data
     {
     	for(j=0;j<TRACE_ROWS;j++) 
        {trace[spot][i][j]=0;}
@@ -169,26 +169,25 @@ inline void Execute(int spot,unsigned int i)
 }
 
 /* ------------------- Translate tb ------------------- */
-inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
+inline void Translate(unsigned int Read_Adress, int i, unsigned int quota)
 {																				// decide where to translate the new TB
 	int j = 0;
-	while((j<CACHE_MAX_BLOCKS) && (adresses[j]!=Read_Adress)) {j++;} 
+	while((j<hot_size_max/2) && (adresses[j]!=Read_Adress)) {j++;} 
 	if (adresses[j] == Read_Adress)
 		{
-			 if (hot_size >= size_max) 
+			 if (hot_size >= hot_size_max)
 				 {
       		 	snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_H%u.dat", nb_hot_flush);
       		 	Dump_Cache(HOT,filename,hot_size);
-      		 	Cache_flush(HOT,0,hot_size);
-      		 	hot_size=0;
+      		 	Cache_flush(HOT, 0, hot_size);
+      		 	hot_size = 0;
       		 	nb_hot_flush++;
       		 }
 			trace[HOT][hot_size][ADRESS] = Read_Adress;
-			trace[HOT][hot_size][NB_TRANS]++;				 	
+			trace[HOT][hot_size][NB_TRANS]++;			 	
 			trace[HOT][hot_size][VALIDE] = 1;
 			Execute(HOT, hot_size);
       	hot_size++;
-      		 
 		}
 	else
 		{
@@ -202,7 +201,7 @@ inline void Translate(unsigned int Read_Adress, int i, unsigned int size_max)
 
 
 /* ------------ Run simulation of cache policy by walking log file ------------ */
-void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, unsigned int size_max)
+void Run(FILE *f,unsigned int max_exec, int quota, int Sim_mode)
 {
 	unsigned int i,j;
 	unsigned int found_cold;
@@ -244,7 +243,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   		}
   if (cold_cache_flush)
   		{
-  			Cache_flush(COLD,cold_size,size_max);
+  			Cache_flush(COLD, cold_size, size_max);
   			cold_cache_flush = 0;
       	if (Lookup_tb(COLD,Read_Adress,cold_size,size_max,&i) == 0) 	// Cannot fail, but may be not found! (cache miss)
       	 {
@@ -260,9 +259,9 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
   	if (line[0]=='T')
   		{
   			sscanf(line+22,"%x",&Read_Adress);
-  			printf("\rTranslations=%6d / Sizes=(C%4d) (H%4d) / ", nb_tran, cold_size, hot_size);
+  			printf("\rTranslations=%6d / Sizes=(Coldspot: %4d/%d) (Hotspot: %4d/%d) / ", nb_tran, cold_size, size_max, hot_size, hot_size_max);
      		printf("Execution   @ 0x%010x",Read_Adress);
-     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,size_max,&i) == 1) && (trace[HOT][i][VALIDE]))
+     		if ((Sim_mode == MQ_MODE) && (Lookup_tb(HOT,Read_Adress,hot_size,hot_size_max,&i) == 1) && (trace[HOT][i][VALIDE]))
      	  		{
      	  			hotspot_hit++;
      	   		total_hit++;
@@ -293,7 +292,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 					 		 	nb_adr++;
 					 			adresses[adr_size] = trace[COLD][i][ADRESS];
 					 			adr_size++;
-								if (adr_size >=CACHE_MAX_BLOCKS)
+								if (adr_size >=hot_size_max/2)
 									{
 										adr_size = 0;
 									}
@@ -331,7 +330,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 			 		}
 			 	else
 			 		{
-			 			Translate(Read_Adress, i, size_max);
+			 			Translate(Read_Adress, i, quota);
 			 		}
   			 	nb_tran++;
 			   break;
@@ -342,7 +341,7 @@ void Run(FILE *f,unsigned int max_exec, int quota, int threshold,int Sim_mode, u
 	else if(line[0]=='I')
 		{
 			sscanf(line+6,"%x",&Read_Adress);
-			if (Lookup_tb(HOT,Read_Adress,cold_size,size_max,&i) == 1)
+			if (Lookup_tb(HOT,Read_Adress,cold_size,hot_size_max,&i) == 1)
 				{
 					trace[HOT][i][VALIDE] = 0;
 					inv_count++;
@@ -392,10 +391,11 @@ void Display_menu()
 /* ------------------------ Main program function ------------------------ */
 int main(int argc, char **argv)
 {
-	unsigned int size_max;
-	unsigned int max_exec = 0;
-	int quota = 8;
-	int threshold;
+
+	unsigned int max_exec = 1000000;
+	int quota = 16;
+	hot_size_max = ((CODE_GEN_MAX_BLOCKS * quota)/NB_SEG);
+	size_max = CODE_GEN_MAX_BLOCKS - hot_size_max;
 	FILE *f;
 	char read_char;
 	char Sim_mode = LRU_MODE;
@@ -414,11 +414,8 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-   size_max = CODE_GEN_MAX_BLOCKS;
    Cache_flush(COLD,0,size_max);
    Cache_flush(COLD,0,size_max);   
-
-   threshold = size_max - (size_max*quota)/NB_SEG;
 
    remove("exec_ratio.dat");
    remove("hit_ratio.dat");
@@ -437,20 +434,23 @@ int main(int argc, char **argv)
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'9'));
    switch(read_char) {
    	case '0': return;   	// exit program
-   	case '1': Run(f,max_exec,quota,threshold,Sim_mode,size_max);
+   	case '1': Run(f,max_exec,quota,Sim_mode);
    					break;
    	case '2': printf("Actual number of translations is %d, Enter new value (0 for continuous loop) : ",max_exec);
    				 scanf("%u",&max_exec);
    				 break;
-   	case '3': do {printf("Actual Quota=%d/32, Enter new value : ",quota);
-   					  scanf("%d/32",&quota);
-   					  threshold = size_max - (size_max*quota)/NB_SEG;
-   					  } while((quota < 1) || (quota > 32));
+   	case '3': do { printf("Actual Quota=%d/32, Enter new value : ",quota);
+   					   scanf("%d/32",&quota);
+   					 }
+   					 	while((quota < 1) || (quota > 32));
    				 break;
-   	case '4': do {printf("Actual Trace size = %d, Enter new value : ",size_max);
-   					  scanf("%d",&size_max);
-   					  threshold = size_max - (size_max*quota)/NB_SEG;
-   					  } while((size_max>CODE_GEN_MAX_BLOCKS) || (size_max%NB_SEG));
+   	case '4': do { 
+   						printf("Actual Trace size = %d, Enter new value : ",((Sim_mode == MQ_MODE)?size_max+hot_size_max:size_max));
+   					   scanf("%d",&size_max);
+   					  	hot_size_max = ((size_max * quota)/NB_SEG);
+							if (Sim_mode == MQ_MODE) size_max = CODE_GEN_MAX_BLOCKS - hot_size_max;
+   					 }
+   					 	while((size_max>CODE_GEN_MAX_BLOCKS) || (size_max%NB_SEG));
    				 break;
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;

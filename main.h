@@ -16,8 +16,7 @@
 #define NB_TRANS 		2
 #define LAST_EXEC 	3
 #define VALIDE 		4
-#define SECOND_CH 	5
-#define TRACE_ROWS 	6
+#define TRACE_ROWS 	5
 
 #define COLD 			0
 #define HOT				1
