@@ -1,6 +1,8 @@
 #include "main.h"
 
 
+#define F_THRESHOLD   16
+
 unsigned int nb_exec = 0;
 unsigned int nb_tran = 0;
 static unsigned int last_nb_exec;
@@ -141,6 +143,8 @@ void Display_stat()
 	printf("nb hotspot flush         = %u\n",nb_hot_flush);	
 	printf("nb exec                  = %u\n",nb_exec);
 	printf("nb trans                 = %u\n",nb_tran);
+	ratio = (float)nb_exec/nb_tran;
+	printf("reuse ratio              = %f\n",ratio);
 	printf("nb tb invalidation       = %u\n",inv_count);
 	global_tb_hit += hotspot_hit;
 	printf("total cache hit          = %u\n",global_tb_hit);
@@ -212,19 +216,20 @@ void Run(FILE *f,unsigned int max_exec, int quota, int Sim_mode)
 
 
    char line[LINE_MAX];
-   char smode[4];
+   char smode[7];
    static int cold_cache_flush;
    
    switch(Sim_mode)
 	 	{
-	 	case MQ_MODE:	sort_row = NB_EXEC;
-	 						snprintf(smode,4,"MQ");
+	 	case BASIC_MODE:	snprintf(smode,7,"FLUSH");
+							break;	 		
+	 	case MQ_MODE:	snprintf(smode,7,"A-2Q");
 							break;
 		case LRU_MODE: sort_row = LAST_EXEC;
-							snprintf(smode,4,"LRU");
+							snprintf(smode,7,"A-LRU");
 							break;
 		case LFU_MODE: sort_row = NB_EXEC;
-							snprintf(smode,4,"LFU");
+							snprintf(smode,7,"A-LFU");
 							break;
 	 	}
 
@@ -275,11 +280,20 @@ void Run(FILE *f,unsigned int max_exec, int quota, int Sim_mode)
 				snprintf(filename, sizeof(char) * F_LENGTH, "trace/Trace_C%u.dat", nb_cold_flush);
 				if (Sim_mode != MQ_MODE)
 					{
-						qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
-						Dump_Cache(COLD,filename,cold_size);
-						printf("\n%s",smode);
-						cold_size = (size_max * quota)/NB_SEG;
-						printf(" (Quota=%d/32)cache policy flush here!",quota);	
+						if ((Sim_mode == LRU_MODE) || (Sim_mode == LFU_MODE))
+							{	
+								qsort(trace, cold_size, TRACE_ROWS * sizeof(unsigned int), cmp);
+								Dump_Cache(COLD,filename,cold_size);
+								cold_size = (size_max * quota)/NB_SEG;				// cold size is reduced to hotspot items, the remaining items are evicted..
+								printf("\n%s (Quota=%d/32)", smode, quota);
+							}
+							else 
+							{ 	
+								Dump_Cache(COLD,filename,cold_size);
+								printf("\n%s",smode);
+								cold_size = 0;
+							}
+								printf(" cache policy flush here!");
 					}
 				else
 					{
@@ -308,12 +322,13 @@ void Run(FILE *f,unsigned int max_exec, int quota, int Sim_mode)
       	 	return;
       	   break;
 			 case 1:
-			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE) && (i < (size_max * quota)/NB_SEG) && (nb_cold_flush>0))			// if TB is translated before last flush
+			 	if ((trace[COLD][i][VALIDE]) && (Sim_mode != MQ_MODE) && (i < (size_max * quota)/NB_SEG) && (nb_cold_flush>0))		
+			 																						// if TB is translated before last flush
 			 		{
 			 			hotspot_hit++;
 			 			total_hit++;
 			 		}
-			 	else //if (trace[COLD][i][VALIDE])
+			 	else
 			 		{
 			 			total_hit++;
 			 		}
@@ -361,17 +376,17 @@ char Simulation_Mode(char Sim_mode)
 	char read_char;
 	printf("Choose the simulation mode:\n");
 	printf("1- Qemu Basic Cache Policy\n");
-	printf("2- Simulate LRU Cache Policy\n");
-	printf("3- Simulate LFU Cache Policy\n");
-	printf("4- Simulate MQ Cache Policy\n");
+	printf("2- Simulate A-LRU Cache Policy\n");
+	printf("3- Simulate A-LFU Cache Policy\n");
+	printf("4- Simulate A-2Q Cache Policy\n");
 	printf("0- Return\n");
 	do {read_char = getchar();} while((read_char <'0') || (read_char >'4'));
 	switch(read_char) {
 	 	case '0': read_char = Sim_mode;break;
 		case BASIC_MODE: printf("Simulation mode : Qemu Basic Policy\n");break;
-		case LRU_MODE	: printf("Simulation mode : LRU Cache Policy\n");break;
-		case LFU_MODE	: printf("Simulation mode : LFU Cache Policy\n");break;
-		case MQ_MODE	: printf("Simulation mode : MQ Cache Policy\n");break;
+		case LRU_MODE	: printf("Simulation mode : A-LRU Cache Policy\n");break;
+		case LFU_MODE	: printf("Simulation mode : A-LFU Cache Policy\n");break;
+		case MQ_MODE	: printf("Simulation mode : A-2Q Cache Policy\n");break;
 	 	}
 	return read_char;
 }
@@ -392,7 +407,7 @@ void Display_menu()
 int main(int argc, char **argv)
 {
 
-	unsigned int max_exec = 100000;
+	unsigned int max_exec = 500000;
 	unsigned int size_total = CODE_GEN_MAX_BLOCKS;
 	int quota = 16;
 	hot_size_max = ((CODE_GEN_MAX_BLOCKS * quota)/NB_SEG);
@@ -460,7 +475,7 @@ int main(int argc, char **argv)
 							else 
 								{size_max = size_total;}
    					 }
-   					 	while((size_max>CODE_GEN_MAX_BLOCKS)  /*|| (size_max%NB_SEG)*/);
+   					 	while((size_max>CODE_GEN_MAX_BLOCKS));
    				 break;
    	case '5': Sim_mode = Simulation_Mode(Sim_mode);
    				 break;
